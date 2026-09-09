@@ -1610,11 +1610,7 @@ describe("machine and environment provider composition", () => {
             displayName: "Test machine",
             environmentProviderId: "project-checkout",
           },
-          policy: {
-            idleSuspendMs: null,
 
-            removeRetryMs: 30_000,
-          },
           reconcileCleanup: async () => ({ status: "removed" }),
           create: async ({ key }) => ({
             status: "created",
@@ -2090,11 +2086,7 @@ describe("a provider-produced environment over its life", () => {
             provider: validatePluginMachineProviderDeclaration({
               id: "replacement-machine",
               displayName: "Replacement machine",
-              policy: {
-                idleSuspendMs: null,
 
-                removeRetryMs: 30_000,
-              },
               reconcileCleanup: async () => ({
                 status: "removed",
               }),
