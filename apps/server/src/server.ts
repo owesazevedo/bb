@@ -39,7 +39,10 @@ import {
   setEnvironmentLaunchRecheckHandler,
   setPluginEnvironmentProviderBridge,
 } from "./services/plugins/plugin-environment-provider-registry.js";
-import { setServerAccessBridge } from "./services/plugins/plugin-server-access-registry.js";
+import {
+  setServerAccessBridge,
+  setServerAccessRecheckHandler,
+} from "./services/plugins/plugin-server-access-registry.js";
 import { setPluginMachineProviderBridge } from "./services/plugins/plugin-machine-provider-registry.js";
 import { recheckEnvironmentProviderLaunches } from "./services/threads/thread-environment-providers.js";
 import { invalidateEnvironmentProviderAvailability } from "./services/environments/provider-availability.js";
@@ -646,6 +649,9 @@ export function createApp(
   );
   setPluginMachineProviderBridge(pluginService.machineProviders);
   setServerAccessBridge(pluginService.serverAccessProviders);
+  setServerAccessRecheckHandler(() => {
+    deps.hub.notifySystem(["config-changed"]);
+  });
   setEnvironmentProviderRecheckHandler((pluginId) => {
     invalidateEnvironmentProviderAvailability();
     deps.hub.notifySystem(["config-changed"]);
