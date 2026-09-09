@@ -474,7 +474,7 @@ export function NewThreadComposer({
   );
 
   const { providers: registeredEnvironmentProviders } =
-    useSystemEnvironmentProviders();
+    useSystemEnvironmentProviders({ projectId });
   const environmentProvidersByHostId = useSystemEnvironmentProvidersByHost(
     projectId,
     availableHostIds,
@@ -1616,7 +1616,6 @@ export function NewThreadComposer({
               selectedProviderHostId: providerHostId,
               inputsControlProviderIds,
               onSelectProvider: handleSelectProvider,
-              machineProviders: machineProviders ?? [],
               selectedMachineProviderId: selectedMachineProvider?.id ?? null,
               ...(!isProjectless && options.onRequestMachineSetup
                 ? { onRequestMachineSetup: options.onRequestMachineSetup }
@@ -1745,7 +1744,6 @@ export function NewThreadComposer({
       machineProviderInputsSlot,
       environmentProvidersByHostId,
       inputsControlProviderIds,
-      machineProviders,
       selectedMachineProvider,
       providerHostId,
       textEffects,

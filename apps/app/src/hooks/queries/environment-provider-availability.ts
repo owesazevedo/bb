@@ -8,6 +8,7 @@ export function aggregateEnvironmentProviderAvailability(
   if (providers === undefined || hosts.some((host) => host === undefined))
     return undefined;
   return providers.map((provider) => {
+    if (provider.machineProviderId) return provider;
     const availability = hosts.map(
       (host) =>
         host?.find((candidate) => candidate.id === provider.id)?.availability ??

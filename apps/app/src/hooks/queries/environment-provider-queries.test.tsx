@@ -13,6 +13,7 @@ vi.mock("@/lib/sdk", () => ({
 }));
 
 const WORKTREE_PROVIDER: SystemEnvironmentProvider = {
+  machineProviderId: null,
   id: "git-worktree",
   displayName: "Worktree",
   icon: "GitBranch",

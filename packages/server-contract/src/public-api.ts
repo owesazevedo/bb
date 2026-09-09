@@ -111,7 +111,7 @@ import type {
   EnvironmentStatusResponse,
   HostDirectoryListing,
   HostDirectoryQuery,
-  MachineEnrollmentCommandQuery,
+  MachineLaunchQuery,
   HostActionResponse,
   HostCloneDefaultPathQuery,
   HostCloneDefaultPathResponse,
@@ -294,7 +294,7 @@ import {
   environmentPathsQuerySchema,
   environmentStatusQuerySchema,
   hostDirectoryQuerySchema,
-  machineEnrollmentCommandQuerySchema,
+  machineLaunchQuerySchema,
   hostCloneDefaultPathQuerySchema,
   hostFileListRequestSchema,
   hostFileReadRequestSchema,
@@ -742,19 +742,10 @@ export const publicApiRoutes = {
     launch: defineRoute({
       path: "/hosts/launches/:id",
       method: "get",
-      request: noRequest<PathId>(),
-      response: jsonResponse<MachineLaunchStatus>(),
-    }),
-    experimental_enrollmentCommand: defineRoute({
-      path: "/hosts/launches/:id/enrollment-command",
-      method: "get",
-      request: optionalQueryRequest<PathId, MachineEnrollmentCommandQuery>(
-        machineEnrollmentCommandQuerySchema,
+      request: optionalQueryRequest<PathId, MachineLaunchQuery>(
+        machineLaunchQuerySchema,
       ),
-      response: jsonResponse<{
-        command: string | null;
-        expiresAt: number | null;
-      }>(),
+      response: jsonResponse<MachineLaunchStatus>(),
     }),
     cancelLaunch: defineRoute({
       path: "/hosts/launches/:id/cancel",
