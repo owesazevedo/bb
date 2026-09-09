@@ -2151,7 +2151,6 @@ describe("a provider-produced environment over its life", () => {
           upsertMachineLaunch(harness.db, {
             key: thread.id,
             providerId: "replacement-machine",
-            projectId: project.id,
             inputs: null,
             attempt: 1,
             phase: "ready",
