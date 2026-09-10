@@ -1,8 +1,4 @@
-<<<<<<< Updated upstream
-import { useEffect, useMemo } from "react";
-=======
-import { useCallback, useEffect } from "react";
->>>>>>> Stashed changes
+import { useCallback, useEffect, useMemo } from "react";
 import type { DiffPresentation } from "@/components/code/code-rendering";
 import type { WorkspaceDiffTarget } from "@bb/domain";
 import type { MarkdownLinkRouting } from "@/components/ui/markdown-link-routing.js";
@@ -591,7 +587,6 @@ export function HostScopedFilePreviewTabContent({
     isLoading,
     refetch,
   } = useHostFilePreview(hostId, activePath, { enabled: isPanelOpen });
-<<<<<<< Updated upstream
   const markdownLinkRouting = useMemo(() => {
     return buildMarkdownLeaseImageRouting({
       path: activePath,
@@ -599,7 +594,6 @@ export function HostScopedFilePreviewTabContent({
       previewUrl: hostFilePreview?.url,
     });
   }, [activePath, hostFilePreview?.url]);
-=======
   const handleMarkdownGrab = resolveMarkdownGrabHandler({
     onMarkdownGrab,
   });
@@ -623,7 +617,6 @@ export function HostScopedFilePreviewTabContent({
     },
     [hostId, refetch],
   );
->>>>>>> Stashed changes
   return (
     <SecondaryPanelFilePreview
       activePath={activePath}
@@ -634,12 +627,9 @@ export function HostScopedFilePreviewTabContent({
       isLoading={isLoading}
       isRefreshing={isFetching}
       lineRange={lineRange}
-<<<<<<< Updated upstream
       markdownLinkRouting={markdownLinkRouting}
-=======
       onMarkdownGrab={handleMarkdownGrab}
       onSaveMarkdown={handleSaveMarkdown}
->>>>>>> Stashed changes
       onOpenInEditor={onOpenInEditor}
       onRefresh={() => void refetch()}
       statusLabel={null}

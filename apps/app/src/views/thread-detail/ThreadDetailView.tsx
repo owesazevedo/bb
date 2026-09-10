@@ -232,12 +232,9 @@ import {
 } from "@/lib/app-navigation-host";
 import { openAppFixedTabFromDestinations } from "@/lib/app-fixed-tab-navigation";
 import {
-<<<<<<< Updated upstream
   getFileBasename,
-  normalizeExperimentalFileOpenOptions,
-=======
   normalizeAppFilePreviewIntent,
->>>>>>> Stashed changes
+  normalizeExperimentalFileOpenOptions,
   toFilePreviewLineRange,
 } from "@/lib/live-file-navigation";
 import { getFilePreviewLineRangeStart } from "@bb/client-core";

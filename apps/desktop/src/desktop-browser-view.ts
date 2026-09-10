@@ -566,16 +566,10 @@ export function createDesktopBrowserViewManager(
     if (existing !== undefined) {
       return existing;
     }
-<<<<<<< Updated upstream
     const browserSession = session.fromPartition(tabPartition);
-    browserSession.setPermissionRequestHandler((_wc, permission, callback) => {
-      callback(isAllowedBrowserPermission(permission));
-=======
-    const browserSession = session.fromPartition(partition);
     installFilePreviewProtocolHandler(browserSession);
     browserSession.setPermissionRequestHandler((wc, permission, callback) => {
       callback(isAllowedBrowserPermission(permission, webContentsUrl(wc)));
->>>>>>> Stashed changes
     });
     browserSession.setPermissionCheckHandler((wc, permission) =>
       isAllowedBrowserPermission(permission, webContentsUrl(wc)),

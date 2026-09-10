@@ -248,15 +248,12 @@ const electronMock = vi.hoisted(() => {
     isEmpty(): boolean;
     toJPEG(quality: number): Buffer;
     getSize(): { width: number; height: number };
-<<<<<<< Updated upstream
-=======
     crop(rect: {
       x: number;
       y: number;
       width: number;
       height: number;
     }): FakeNativeImage;
->>>>>>> Stashed changes
     resize(size: { width: number; height: number }): FakeNativeImage;
   }
 
@@ -311,14 +308,9 @@ const electronMock = vi.hoisted(() => {
   const fakeCapturedImage: FakeNativeImage = {
     isEmpty: () => false,
     toJPEG: () => Buffer.from("jpeg-bytes"),
-<<<<<<< Updated upstream
     getSize: () => ({ width: 1280, height: 720 }),
-    resize: (size) => ({ ...fakeCapturedImage, getSize: () => size }),
-=======
-    getSize: () => ({ width: 800, height: 600 }),
     crop: () => fakeCapturedImage,
-    resize: () => fakeCapturedImage,
->>>>>>> Stashed changes
+    resize: (size) => ({ ...fakeCapturedImage, getSize: () => size }),
   };
 
   class FakeDebugger {

@@ -74,15 +74,12 @@ import {
   BB_DESKTOP_BROWSER_STATE_CHANNEL,
   BB_DESKTOP_BROWSER_STOP_CHANNEL,
   BB_DESKTOP_BROWSER_STOP_FIND_IN_PAGE_CHANNEL,
-<<<<<<< Updated upstream
   BB_DESKTOP_BROWSER_LIST_IMPORT_SOURCES_CHANNEL,
   BB_DESKTOP_BROWSER_IMPORT_COOKIES_CHANNEL,
   BB_DESKTOP_BROWSER_OPEN_FULL_DISK_ACCESS_SETTINGS_CHANNEL,
-=======
   BB_DESKTOP_BROWSER_START_GRAB_CHANNEL,
   BB_DESKTOP_BROWSER_CANCEL_GRAB_CHANNEL,
   BB_DESKTOP_BROWSER_GRAB_RESULT_CHANNEL,
->>>>>>> Stashed changes
 } from "./desktop-browser-ipc.js";
 import {
   BB_DESKTOP_APP_COMMAND_CHANNEL,
@@ -339,7 +336,6 @@ const bbBrowserApi: BbDesktopBrowserApi = {
       browserFindResultListeners.delete(listener);
     };
   },
-<<<<<<< Updated upstream
   async listImportSources() {
     const payload: unknown = await ipcRenderer.invoke(
       BB_DESKTOP_BROWSER_LIST_IMPORT_SOURCES_CHANNEL,
@@ -357,7 +353,7 @@ const bbBrowserApi: BbDesktopBrowserApi = {
   },
   openFullDiskAccessSettings() {
     ipcRenderer.send(BB_DESKTOP_BROWSER_OPEN_FULL_DISK_ACCESS_SETTINGS_CHANNEL);
-=======
+  },
   startGrab(tabId): void {
     ipcRenderer.send(BB_DESKTOP_BROWSER_START_GRAB_CHANNEL, { tabId });
   },
@@ -369,7 +365,6 @@ const bbBrowserApi: BbDesktopBrowserApi = {
     return () => {
       browserGrabResultListeners.delete(listener);
     };
->>>>>>> Stashed changes
   },
 };
 

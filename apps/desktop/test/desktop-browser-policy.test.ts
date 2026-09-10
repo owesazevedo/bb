@@ -12,10 +12,6 @@ describe("isAllowedBrowserUrl", () => {
     expect(isAllowedBrowserUrl("about:blank")).toBe(true);
   });
 
-<<<<<<< Updated upstream
-  it("blocks unsupported schemes and unparseable URLs", () => {
-    expect(isAllowedBrowserUrl("file:///etc/passwd")).toBe(false);
-=======
   it("allows the privileged HTML preview scheme", () => {
     expect(
       isAllowedBrowserUrl(
@@ -27,8 +23,8 @@ describe("isAllowedBrowserUrl", () => {
     ).toBe(false);
   });
 
-  it("blocks non-http(s) and unparseable URLs", () => {
->>>>>>> Stashed changes
+  it("blocks unsupported schemes and unparseable URLs", () => {
+    expect(isAllowedBrowserUrl("file:///etc/passwd")).toBe(false);
     expect(isAllowedBrowserUrl("javascript:alert(1)")).toBe(false);
     expect(isAllowedBrowserUrl("data:text/html,<h1>x</h1>")).toBe(false);
     expect(isAllowedBrowserUrl("about:config")).toBe(false);

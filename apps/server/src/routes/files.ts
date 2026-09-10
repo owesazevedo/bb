@@ -154,23 +154,10 @@ async function serveRawFilesystemHtmlFile(
     deps,
     {
       hostId: environment.hostId,
-<<<<<<< Updated upstream
       path: filePath,
     },
-    createRawFilesystemHtmlPreviewResponse,
+    (result) => createRawFilesystemHtmlPreviewResponse(result, request),
   );
-=======
-      timeoutMs: COMMAND_TIMEOUT_MS,
-      command: {
-        type: "host.read_file",
-        path: filePath,
-      },
-    });
-    return createRawFilesystemHtmlPreviewResponse(result, request);
-  } catch (error) {
-    return remapDaemonFileRouteError(error);
-  }
->>>>>>> Stashed changes
 }
 
 export function registerFileRoutes(app: Hono, deps: AppDeps): void {
@@ -455,7 +442,6 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
       deps,
       {
         hostId: lease.hostId,
-<<<<<<< Updated upstream
         ...(!isHtmlPath
           ? { ifNoneMatch: context.req.header("if-none-match") }
           : {}),
@@ -468,7 +454,10 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
         if (isHtml) {
           assertRawFilesystemHtmlPreviewResult(result);
           headers.set("cache-control", "no-store");
-          headers.set("content-security-policy", HTML_PREVIEW_CSP);
+          const csp = htmlPreviewCspForRequest({ req: context.req });
+          if (csp !== null) {
+            headers.set("content-security-policy", csp);
+          }
           headers.set("content-type", HTML_PREVIEW_CONTENT_TYPE);
         }
         return createDaemonFileContentResponse(result, {
@@ -477,30 +466,5 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
         });
       },
     );
-=======
-        timeoutMs: COMMAND_TIMEOUT_MS,
-        command: {
-          type: "host.read_file",
-          path: joinHostPath(lease.rootPath, segments),
-          rootPath: lease.rootPath,
-        },
-      });
-      const headers = new Headers({
-        "cache-control": "no-store",
-        "x-content-type-options": "nosniff",
-      });
-      if (isHtmlMimeType(result.mimeType)) {
-        assertRawFilesystemHtmlPreviewResult(result);
-        const csp = htmlPreviewCspForRequest(context);
-        if (csp !== null) {
-          headers.set("content-security-policy", csp);
-        }
-        headers.set("content-type", HTML_PREVIEW_CONTENT_TYPE);
-      }
-      return createDaemonFileContentResponse(result, { headers });
-    } catch (error) {
-      return remapDaemonFileRouteError(error);
-    }
->>>>>>> Stashed changes
   });
 }

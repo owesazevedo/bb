@@ -161,7 +161,6 @@ import {
 } from "./desktop-browser-view.js";
 import { resolveDesktopBrowserAppCommand } from "./desktop-browser-shortcuts.js";
 import { registerDesktopBrowserIpc } from "./desktop-browser-main-ipc.js";
-<<<<<<< Updated upstream
 import { createBrowserImportService } from "./browser-import/browser-import.js";
 import { readMacAppIcon } from "./browser-import/mac-app-icon.js";
 import {
@@ -178,12 +177,10 @@ import {
   BB_DESKTOP_BROWSER_IMPORT_COOKIES_CHANNEL,
   BB_DESKTOP_BROWSER_OPEN_FULL_DISK_ACCESS_SETTINGS_CHANNEL,
 } from "./desktop-browser-ipc.js";
-=======
 import {
   installFilePreviewProtocolHandler,
   registerFilePreviewSchemePrivileges,
 } from "./file-preview-protocol.js";
->>>>>>> Stashed changes
 import { parseDesktopSystemConfig } from "./desktop-system-config.js";
 import { ensurePackagedUserShellPath } from "./desktop-shell-path.js";
 import { applyForkPackagedIsolation } from "./fork-isolation.js";
