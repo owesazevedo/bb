@@ -128,6 +128,11 @@ import {
 } from "@/lib/in-app-browser-link-preference";
 import type { MarkdownPreviewLinkHandler } from "@/components/ui/markdown-link";
 import { UrlOpenRoutingProvider } from "@/lib/url-open-routing";
+import { appToast } from "@/components/ui/app-toast";
+import {
+  applyMarkdownGrabToDraftAccessor,
+  type MarkdownGrabSelectedResult,
+} from "@/lib/markdown-grab-quote";
 import {
   AppNavigationHostProvider,
   type AppFilePreviewIntent,
@@ -135,7 +140,7 @@ import {
 } from "@/lib/app-navigation-host";
 import { openAppFixedTabFromDestinations } from "@/lib/app-fixed-tab-navigation";
 import {
-  normalizeExperimentalFileOpenOptions,
+  normalizeAppFilePreviewIntent,
   toFilePreviewLineRange,
 } from "@/lib/live-file-navigation";
 import {
@@ -712,6 +717,17 @@ function RootComposeSurface({
     },
     [promptBoxRef, promptDraft, setStartedComposing],
   );
+  const handleRootPanelMarkdownGrab = useCallback(
+    (result: MarkdownGrabSelectedResult) => {
+      if (applyMarkdownGrabToDraftAccessor(promptDraft, result)) {
+        appToast.success("Note added to chat");
+      }
+      setStartedComposing(true);
+      requestComposerFocus(promptDraft.storageKey);
+      window.requestAnimationFrame(() => promptBoxRef.current?.focusEnd());
+    },
+    [promptBoxRef, promptDraft, setStartedComposing],
+  );
 
   const setPromptDraft = promptDraft.setDraft;
   const restorePromptDraftIfEmpty = promptDraft.restoreIfEmpty;
@@ -1159,7 +1175,7 @@ function RootComposeSurface({
   });
   const handleOpenLiveFilePreview = useCallback(
     (intent: AppFilePreviewIntent): boolean => {
-      const normalized = normalizeExperimentalFileOpenOptions(intent);
+      const normalized = normalizeAppFilePreviewIntent(intent);
       if (normalized === null) return false;
       const lineRange = toFilePreviewLineRange(normalized.location);
       const options =
@@ -1282,13 +1298,10 @@ function RootComposeSurface({
   );
   const openBrowserTabAndReveal = useCallback(
     (url?: string) => {
-      if (rootPanelThreadId === null) {
-        return;
-      }
       openBrowserTab(url);
       openCompactDrawer();
     },
-    [openBrowserTab, openCompactDrawer, rootPanelThreadId],
+    [openBrowserTab, openCompactDrawer],
   );
   const handleBrowserAddressFocusRequestConsumed = useCallback(
     (request: BrowserAddressFocusRequest) => {
@@ -1336,9 +1349,6 @@ function RootComposeSurface({
       canShowNativeBrowserView: boolean;
       onNativeFocus: () => void;
     }) => {
-      if (rootPanelThreadId === null) {
-        return null;
-      }
       return (
         <LazyBrowserTabDeck
           browserTabs={browserTabs}
@@ -1351,7 +1361,7 @@ function RootComposeSurface({
           canShowNativeBrowserView={canShowNativeBrowserView}
           canHandleBrowserCommands={canHandleBrowserCommands}
           onNativeFocus={onNativeFocus}
-          threadId={rootPanelThreadId}
+          threadId={rootPanelThreadId ?? ROOT_COMPOSE_FIXED_PANEL_STATE_ID}
           onUpdate={updateBrowserTab}
         />
       );
@@ -1533,7 +1543,6 @@ function RootComposeSurface({
   const handleOpenPanelLink = useCallback<MarkdownPreviewLinkHandler>(
     ({ href }) => {
       if (
-        rootPanelThreadId === null ||
         resolveUrlOpenTarget({
           desktopBrowserAvailable,
           openLinksInAppBrowser,
@@ -1545,12 +1554,7 @@ function RootComposeSurface({
       openBrowserTabAndReveal(href);
       return true;
     },
-    [
-      desktopBrowserAvailable,
-      openBrowserTabAndReveal,
-      openLinksInAppBrowser,
-      rootPanelThreadId,
-    ],
+    [desktopBrowserAvailable, openBrowserTabAndReveal, openLinksInAppBrowser],
   );
   const renderRootPanelTabContent = useCallback(
     (
@@ -1571,6 +1575,7 @@ function RootComposeSurface({
         onOpenPanelLink={handleOpenPanelLink}
         onSelectFileSearchResult={handleSelectFileSearchResult}
         onSelectionAddToChat={handleRootPanelSelectionAddToChat}
+        onMarkdownGrab={handleRootPanelMarkdownGrab}
         onStartTerminal={handleStartTerminal}
         pane={pane}
         primaryHostId={primaryHostId}
@@ -1593,6 +1598,7 @@ function RootComposeSurface({
       handleNewTabAutoFocusHandled,
       handleOpenPanelLink,
       handleRootPanelSelectionAddToChat,
+      handleRootPanelMarkdownGrab,
       handleSelectFileSearchResult,
       handleStartTerminal,
       handleTerminalAutoFocusHandled,
@@ -1969,9 +1975,7 @@ function RootComposeSurface({
       <PluginComposerHostProvider value={pluginComposerHost}>
         <UrlOpenRoutingProvider
           openInAppBrowser={
-            desktopBrowserAvailable && rootPanelThreadId !== null
-              ? openBrowserTabAndReveal
-              : null
+            desktopBrowserAvailable ? openBrowserTabAndReveal : null
           }
         >
           <AppNavigationHostProvider capabilities={appNavigationCapabilities}>

@@ -626,7 +626,7 @@ export function NewTabFileSearch({
           />
         ) : null}
       </div>
-      {hasQuery ? null : idleActions}
+      {idleActions}
       {isUnavailable ? (
         <FileSearchMessage
           iconName="FileQuestion"

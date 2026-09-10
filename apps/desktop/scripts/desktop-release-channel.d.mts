@@ -7,8 +7,8 @@ export interface DesktopUpdateMetadataFileNames {
 }
 
 export interface DesktopReleaseConfig {
-  appId: "dev.bb.desktop" | "dev.bb.desktop.nightly";
-  applicationName: "bb" | "bb Nightly";
+  appId: "dev.bb.desktop" | "dev.bb.desktop.nightly" | "dev.bb.desktop.fork";
+  applicationName: "bb" | "bb Nightly" | "bb dev";
   artifactName: string;
   iconFileName: "icon.png" | "icon-nightly.png";
   linuxExecutableName: "bb" | "bb-nightly";

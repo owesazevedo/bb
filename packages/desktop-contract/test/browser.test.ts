@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BB_DESKTOP_BROWSER_MAX_URL_LENGTH,
   bbDesktopBrowserAttachRequestSchema,
+  bbDesktopBrowserGrabResultSchema,
   bbDesktopBrowserSetBoundsRequestSchema,
   bbDesktopBrowserStateSchema,
   clampBbDesktopBrowserViewBounds,
@@ -140,6 +141,38 @@ describe("desktop browser IPC schemas", () => {
         url: longUrl,
         bounds: { x: 0, y: 0, width: 800, height: 600 },
         visible: true,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts selected and cancelled grab results and rejects extra fields", () => {
+    expect(
+      bbDesktopBrowserGrabResultSchema.safeParse({
+        kind: "cancelled",
+        tabId: "browser:abc",
+        reason: "user",
+      }).success,
+    ).toBe(true);
+    expect(
+      bbDesktopBrowserGrabResultSchema.safeParse({
+        kind: "selected",
+        tabId: "browser:abc",
+        url: "https://example.com",
+        title: "Example",
+        tagName: "button",
+        selector: "#cta",
+        html: "<button id=\"cta\">Go</button>",
+        css: { color: "rgb(0, 0, 0)" },
+        rect: { x: 1, y: 2, width: 3, height: 4 },
+        screenshotDataUrl: null,
+      }).success,
+    ).toBe(true);
+    expect(
+      bbDesktopBrowserGrabResultSchema.safeParse({
+        kind: "cancelled",
+        tabId: "browser:abc",
+        reason: "user",
+        extra: true,
       }).success,
     ).toBe(false);
   });

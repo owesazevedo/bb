@@ -410,7 +410,7 @@ describe("electron-builder signing config", () => {
     );
     const nodePtyPackageDir = resolve(
       appOutDir,
-      "bb.app",
+      "bb dev.app",
       "Contents",
       "Resources",
       "app.asar.unpacked",
@@ -584,6 +584,8 @@ describe("electron-builder signing config", () => {
   it("signs local builds via keychain auto-discovery when signing secrets are absent", async () => {
     const { config } = await readResolvedConfig({});
 
+    expect(config.appId).toBe("dev.bb.desktop.fork");
+    expect(config.productName).toBe("bb dev");
     expect(config.mac).not.toHaveProperty("identity");
     expect(config.mac.notarize).toBe(false);
     expect(config.dmg.sign).toBe(false);

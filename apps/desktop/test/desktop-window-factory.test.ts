@@ -7,6 +7,7 @@ import {
   createDesktopWindowFactory,
   type DesktopBrowserWindow,
   type DesktopBrowserWindowCreator,
+  type DesktopWindowCloseEvent,
   type DesktopWindowOpenHandler,
   type DesktopWindowOpenDevToolsOptions,
   type DesktopWindowWebContents,
@@ -112,9 +113,12 @@ class FakeDesktopWindow implements DesktopBrowserWindow {
   public fullScreen = false;
   public maximized = false;
   public minimized = false;
+  public hidden = false;
   public shown = false;
   private destroyed = false;
   private readonly bounds: WindowBounds;
+  private readonly closeListeners: Array<(event: DesktopWindowCloseEvent) => void> =
+    [];
   private readonly closedListeners: Array<() => void> = [];
   private readyToShowListener: (() => void) | null = null;
 
@@ -137,6 +141,22 @@ class FakeDesktopWindow implements DesktopBrowserWindow {
   private static nextWindowId = 1;
   private static nextWebContentsId = 1;
 
+  emitClose(): boolean {
+    const event: DesktopWindowCloseEvent & { defaultPrevented: boolean } = {
+      defaultPrevented: false,
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
+    };
+    for (const listener of this.closeListeners) {
+      listener(event);
+    }
+    if (!event.defaultPrevented) {
+      this.emitClosed();
+    }
+    return event.defaultPrevented;
+  }
+
   emitClosed(): void {
     this.destroyed = true;
     for (const listener of this.closedListeners) {
@@ -150,6 +170,12 @@ class FakeDesktopWindow implements DesktopBrowserWindow {
 
   focus(): void {
     this.focused = true;
+  }
+
+  hide(): void {
+    this.hidden = true;
+    this.shown = false;
+    this.focused = false;
   }
 
   getBounds(): WindowBounds {
@@ -186,10 +212,16 @@ class FakeDesktopWindow implements DesktopBrowserWindow {
 
   on(
     eventName: "close" | "closed" | "enter-full-screen" | "leave-full-screen",
-    listener: () => void,
+    listener: ((event: DesktopWindowCloseEvent) => void) | (() => void),
   ): void {
+    if (eventName === "close") {
+      this.closeListeners.push(
+        listener as (event: DesktopWindowCloseEvent) => void,
+      );
+      return;
+    }
     if (eventName === "closed") {
-      this.closedListeners.push(listener);
+      this.closedListeners.push(listener as () => void);
     }
   }
 
@@ -208,6 +240,7 @@ class FakeDesktopWindow implements DesktopBrowserWindow {
   }
 
   show(): void {
+    this.hidden = false;
     this.shown = true;
   }
 }
@@ -729,5 +762,120 @@ describe("desktop window factory", () => {
     expect(createdWindows[0]?.options).not.toHaveProperty(
       "trafficLightPosition",
     );
+  });
+
+  it("hides the last macOS window instead of destroying it", async () => {
+    const tempDir = await createTempDir();
+    const createdWindows: FakeDesktopWindow[] = [];
+    const factory = createDesktopWindowFactory({
+      browserWindowCreator: {
+        create(options) {
+          const browserWindow = new FakeDesktopWindow({ options });
+          createdWindows.push(browserWindow);
+          return browserWindow;
+        },
+      },
+      createWindowStateKey() {
+        return "window-hidden";
+      },
+      displayWorkAreas: [{ height: 900, width: 1440, x: 0, y: 0 }],
+      icon: undefined,
+      isLinuxFrameless: false,
+      isLinuxTransparent: false,
+      isMac: true,
+      isQuitting() {
+        return false;
+      },
+      openExternalUrl() {},
+      preloadPath: "/tmp/preload.cjs",
+      userDataPath: tempDir.path,
+    });
+
+    await factory.createWindow({ initialUrl: null, stateKey: null });
+    const browserWindow = createdWindows[0];
+    expect(browserWindow).toBeDefined();
+    expect(browserWindow?.emitClose()).toBe(true);
+    expect(browserWindow?.hidden).toBe(true);
+    expect(browserWindow?.isDestroyed()).toBe(false);
+    expect(factory.hasOpenWindows()).toBe(true);
+
+    expect(factory.focusFirstWindow()).toBe(true);
+    expect(browserWindow?.hidden).toBe(false);
+    expect(browserWindow?.shown).toBe(true);
+    expect(browserWindow?.focused).toBe(true);
+  });
+
+  it("destroys extra macOS windows and the last window while quitting", async () => {
+    const tempDir = await createTempDir();
+    const createdWindows: FakeDesktopWindow[] = [];
+    let quitting = false;
+    const factory = createDesktopWindowFactory({
+      browserWindowCreator: {
+        create(options) {
+          const browserWindow = new FakeDesktopWindow({ options });
+          createdWindows.push(browserWindow);
+          return browserWindow;
+        },
+      },
+      createWindowStateKey() {
+        return "window-second";
+      },
+      displayWorkAreas: [{ height: 900, width: 1440, x: 0, y: 0 }],
+      icon: undefined,
+      isLinuxFrameless: false,
+      isLinuxTransparent: false,
+      isMac: true,
+      isQuitting() {
+        return quitting;
+      },
+      openExternalUrl() {},
+      preloadPath: "/tmp/preload.cjs",
+      userDataPath: tempDir.path,
+    });
+
+    await factory.createWindow({ initialUrl: null, stateKey: null });
+    await factory.createWindow({ initialUrl: null, stateKey: null });
+    expect(createdWindows[1]?.emitClose()).toBe(false);
+    expect(createdWindows[1]?.isDestroyed()).toBe(true);
+    expect(factory.hasOpenWindows()).toBe(true);
+
+    quitting = true;
+    expect(createdWindows[0]?.emitClose()).toBe(false);
+    expect(createdWindows[0]?.hidden).toBe(false);
+    expect(createdWindows[0]?.isDestroyed()).toBe(true);
+  });
+
+  it("closes the last window on Linux instead of hiding it", async () => {
+    const tempDir = await createTempDir();
+    const createdWindows: FakeDesktopWindow[] = [];
+    const factory = createDesktopWindowFactory({
+      browserWindowCreator: {
+        create(options) {
+          const browserWindow = new FakeDesktopWindow({ options });
+          createdWindows.push(browserWindow);
+          return browserWindow;
+        },
+      },
+      createWindowStateKey() {
+        return "linux-window";
+      },
+      displayWorkAreas: [{ height: 900, width: 1440, x: 0, y: 0 }],
+      icon: undefined,
+      isLinuxFrameless: false,
+      isLinuxTransparent: false,
+      isMac: false,
+      isQuitting() {
+        return false;
+      },
+      openExternalUrl() {},
+      preloadPath: "/tmp/preload.cjs",
+      userDataPath: tempDir.path,
+    });
+
+    await factory.createWindow({ initialUrl: null, stateKey: null });
+    expect(createdWindows[0]?.emitClose()).toBe(false);
+    expect(createdWindows[0]?.hidden).toBe(false);
+    expect(createdWindows[0]?.isDestroyed()).toBe(true);
+    expect(factory.hasOpenWindows()).toBe(false);
   });
 });

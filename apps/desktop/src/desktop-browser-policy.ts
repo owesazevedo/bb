@@ -1,3 +1,5 @@
+import { isPrivilegedFilePreviewUrl } from "@bb/config/file-preview-origin";
+
 export function isAllowedBrowserUrl(url: string): boolean {
   if (url === "about:blank") return true;
   let parsed: URL;
@@ -6,7 +8,13 @@ export function isAllowedBrowserUrl(url: string): boolean {
   } catch {
     return false;
   }
-  return parsed.protocol === "http:" || parsed.protocol === "https:";
+  if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+    return true;
+  }
+  if (parsed.protocol === "file:") {
+    return parsed.hostname === "" && parsed.pathname.length > 1;
+  }
+  return isPrivilegedFilePreviewUrl(url);
 }
 
 interface PopupRateDecision {

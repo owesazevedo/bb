@@ -37,6 +37,8 @@ import {
   BB_DESKTOP_BROWSER_STATE_CHANNEL,
   BB_DESKTOP_BROWSER_STOP_CHANNEL,
   BB_DESKTOP_BROWSER_STOP_FIND_IN_PAGE_CHANNEL,
+  BB_DESKTOP_BROWSER_START_GRAB_CHANNEL,
+  BB_DESKTOP_BROWSER_CANCEL_GRAB_CHANNEL,
 } from "../src/desktop-browser-ipc.js";
 import {
   BB_DESKTOP_APP_COMMAND_CHANNEL,
@@ -206,6 +208,7 @@ describe("desktop preload browser API", () => {
 
     expect(Object.keys(api.browser).sort()).toEqual([
       "attach",
+      "cancelGrab",
       "detach",
       "findInPage",
       "focus",
@@ -219,6 +222,7 @@ describe("desktop preload browser API", () => {
       "onControl",
       "onFindResult",
       "onFocus",
+      "onGrabResult",
       "onOpenTab",
       "onReveal",
       "onScopedOpenTab",
@@ -230,6 +234,7 @@ describe("desktop preload browser API", () => {
       "setBounds",
       "setVisible",
       "setVisibleWithoutFocus",
+      "startGrab",
       "stop",
       "stopFindInPage",
     ]);
@@ -249,6 +254,8 @@ describe("desktop preload browser API", () => {
     api.browser.setVisibleWithoutFocus?.(visibleRequest);
     api.browser.findInPage?.(findRequest);
     api.browser.stopFindInPage?.(stopFindRequest);
+    api.browser.startGrab?.("browser:a");
+    api.browser.cancelGrab?.("browser:a");
     api.setTheme("dark");
     await api.checkForUpdates();
     await expect(api.getWindowState?.()).resolves.toEqual({
@@ -305,6 +312,14 @@ describe("desktop preload browser API", () => {
       {
         channel: BB_DESKTOP_BROWSER_STOP_FIND_IN_PAGE_CHANNEL,
         payload: stopFindRequest,
+      },
+      {
+        channel: BB_DESKTOP_BROWSER_START_GRAB_CHANNEL,
+        payload: { tabId: "browser:a" },
+      },
+      {
+        channel: BB_DESKTOP_BROWSER_CANCEL_GRAB_CHANNEL,
+        payload: { tabId: "browser:a" },
       },
       { channel: BB_DESKTOP_SET_THEME_CHANNEL, payload: "dark" },
     ]);

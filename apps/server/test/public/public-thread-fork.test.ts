@@ -925,6 +925,92 @@ describe("public thread fork route", () => {
       });
     });
   });
+
+  it("starts a hidden Cursor side-chat fork without cloning the ACP session", async () => {
+    await withTestHarness({}, async (harness) => {
+      const { host } = seedHostSession(harness.deps);
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+      });
+      const environment = seedEnvironment(harness.deps, {
+        hostId: host.id,
+        projectId: project.id,
+      });
+      const sourceThread = seedThread(harness.deps, {
+        environmentId: environment.id,
+        projectId: project.id,
+        providerId: "acp-cursor",
+      });
+      seedThreadRuntimeState(harness.deps, {
+        environmentId: environment.id,
+        providerThreadId: "provider-cursor-source",
+        threadId: sourceThread.id,
+      });
+      seedTurnStarted(harness.deps, {
+        environmentId: environment.id,
+        providerThreadId: "provider-cursor-source",
+        sequence: 3,
+        threadId: sourceThread.id,
+        turnId: "turn-cursor-source",
+      });
+
+      const response = await postFork(harness, {
+        sourceThreadId: sourceThread.id,
+        visibility: "hidden",
+        origin: "plugin",
+        originPluginId: "side-chat",
+      });
+
+      const body = await readJson(response);
+      expect({ status: response.status, body }).toEqual({
+        status: 201,
+        body: expect.objectContaining({
+          originKind: "fork",
+          originPluginId: "side-chat",
+          providerId: "acp-cursor",
+          visibility: "hidden",
+          sourceThreadId: sourceThread.id,
+        }),
+      });
+      const fork = threadResponseSchema.parse(body);
+      expect(fork.originKind).toBe("fork");
+      expect(fork.providerId).toBe("acp-cursor");
+      expect(fork.visibility).toBe("hidden");
+    });
+  });
+
+  it("still rejects a visible Cursor fork that would clone the ACP session", async () => {
+    await withTestHarness({}, async (harness) => {
+      const { host } = seedHostSession(harness.deps);
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+      });
+      const environment = seedEnvironment(harness.deps, {
+        hostId: host.id,
+        projectId: project.id,
+      });
+      const sourceThread = seedThread(harness.deps, {
+        environmentId: environment.id,
+        projectId: project.id,
+        providerId: "acp-cursor",
+      });
+      seedThreadRuntimeState(harness.deps, {
+        environmentId: environment.id,
+        providerThreadId: "provider-cursor-source",
+        threadId: sourceThread.id,
+      });
+
+      const response = await postFork(harness, {
+        sourceThreadId: sourceThread.id,
+      });
+
+      expect(response.status).toBe(400);
+      expect(await readJson(response)).toMatchObject({
+        code: "invalid_request",
+        message: "Provider acp-cursor does not support thread forks",
+      });
+    });
+  });
 });
 
 const HISTORY_PROVIDER_THREAD_ID = "provider-history-source";

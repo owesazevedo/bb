@@ -1,5 +1,5 @@
 {
-  "appId": "dev.bb.desktop",
+  "appId": "dev.bb.desktop.fork",
   "productName": "bb",
   "artifactName": "${productName}-${version}-${arch}.${ext}",
   "toolsets": {

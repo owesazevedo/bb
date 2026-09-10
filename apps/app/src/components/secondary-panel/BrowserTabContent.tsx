@@ -52,6 +52,13 @@ import {
 import type { AppShortcutPresentation } from "@/lib/app-keybindings";
 import { CHROME_SUBTLE_ICON_BUTTON_FOREGROUND_CLASS } from "@bb/shared-ui/chrome-style-tokens";
 import { isLocalOnlyUrl } from "@/lib/loopback-hostname";
+import { getPromptDraftAccessor } from "@/hooks/usePromptDraftStorage";
+import { useRouteState } from "@/hooks/useRouteState";
+import {
+  appendBrowserGrabToDraft,
+  resolveBrowserGrabDraftTarget,
+} from "@/lib/browser-grab-quote";
+import { appToast } from "@/components/ui/app-toast";
 
 interface BrowserTabContentProps {
   tabId: string;
@@ -87,14 +94,24 @@ interface BrowserChromeProps {
   onForward: () => void;
   onReloadOrStop: () => void;
   onOpenExternal: () => void;
+  canGrab: boolean;
+  isGrabbing: boolean;
+  onToggleGrab: () => void;
   locationShortcut: AppShortcutPresentation | null;
   reloadShortcut: AppShortcutPresentation | null;
 }
 
 interface NavButtonProps {
-  icon: "ChevronLeft" | "ChevronRight" | "RotateCcw" | "X" | "ExternalLink";
+  icon:
+    | "ChevronLeft"
+    | "ChevronRight"
+    | "RotateCcw"
+    | "X"
+    | "ExternalLink"
+    | "Target";
   label: string;
   disabled?: boolean;
+  pressed?: boolean;
   onClick: () => void;
   shortcut?: AppShortcutPresentation | null;
 }
@@ -183,6 +200,7 @@ function NavButton({
   icon,
   label,
   disabled,
+  pressed,
   onClick,
   shortcut,
 }: NavButtonProps) {
@@ -193,11 +211,13 @@ function NavButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={accessibleLabel}
+      aria-pressed={pressed}
       aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
       className={cn(
         "flex shrink-0 items-center justify-center transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40",
         COARSE_POINTER_HEADER_ICON_BUTTON_CLASS,
         CHROME_SUBTLE_ICON_BUTTON_FOREGROUND_CLASS,
+        pressed === true ? "bg-state-active text-foreground" : null,
       )}
     >
       <Icon name={icon} aria-hidden />
@@ -219,6 +239,9 @@ function BrowserChrome({
   onForward,
   onReloadOrStop,
   onOpenExternal,
+  canGrab,
+  isGrabbing,
+  onToggleGrab,
   locationShortcut,
   reloadShortcut,
 }: BrowserChromeProps) {
@@ -320,6 +343,14 @@ function BrowserChrome({
           disabled={currentUrl.length === 0}
           onClick={onOpenExternal}
         />
+        {canGrab ? (
+          <NavButton
+            icon="Target"
+            label={isGrabbing ? "Cancel element pick" : "Pick element for chat"}
+            pressed={isGrabbing}
+            onClick={onToggleGrab}
+          />
+        ) : null}
         {isLoading ? (
           <span className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden">
             <span className="block h-full w-1/3 animate-pulse bg-ring/70 motion-reduce:animate-none" />
@@ -421,6 +452,7 @@ export function BrowserTabContent({
   threadId,
   onUpdate,
 }: BrowserTabContentProps) {
+  const { projectId, threadId: routeThreadId } = useRouteState();
   const locationShortcut = useAppCommandShortcut("browser.focusLocation");
   const reloadShortcut = useAppCommandShortcut("browser.reload");
   const findShortcut = useAppCommandShortcut("browser.find");
@@ -481,6 +513,7 @@ export function BrowserTabContent({
   const [resizeSnapshotUrl, setResizeSnapshotUrl] = useState<string | null>(
     null,
   );
+  const [isGrabbing, setIsGrabbing] = useState(false);
 
   const onUpdateRef = useRef(onUpdate);
   const recordVisitRef = useRef(recordVisit);
@@ -878,6 +911,61 @@ export function BrowserTabContent({
     getBbDesktopInfo()?.openExternalUrl(currentUrl);
   }, [currentUrl]);
 
+  const canGrab =
+    canShowNativeBrowserView &&
+    desktopBrowser !== null &&
+    desktopBrowser.startGrab !== undefined &&
+    desktopBrowser.cancelGrab !== undefined &&
+    desktopBrowser.onGrabResult !== undefined &&
+    hasPage;
+
+  const handleToggleGrab = useCallback(() => {
+    if (!canGrab || desktopBrowser === null) {
+      return;
+    }
+    if (isGrabbing) {
+      desktopBrowser.cancelGrab?.(tabId);
+      setIsGrabbing(false);
+      return;
+    }
+    desktopBrowser.startGrab?.(tabId);
+    setIsGrabbing(true);
+  }, [canGrab, desktopBrowser, isGrabbing, tabId]);
+
+  useEffect(() => {
+    if (desktopBrowser?.onGrabResult === undefined) {
+      return;
+    }
+    return desktopBrowser.onGrabResult((result) => {
+      if (result.tabId !== tabId) {
+        return;
+      }
+      setIsGrabbing(false);
+      if (result.kind === "cancelled") {
+        return;
+      }
+      const draftTarget = resolveBrowserGrabDraftTarget({
+        panelThreadId: threadId,
+        routeProjectId: projectId,
+        routeThreadId,
+      });
+      const accessor = getPromptDraftAccessor(draftTarget);
+      accessor.setDraft(appendBrowserGrabToDraft(accessor.getCurrent(), result));
+      appToast.success(
+        draftTarget.kind === "thread"
+          ? "Element added to chat"
+          : "Element added to New thread composer",
+      );
+    });
+  }, [desktopBrowser, projectId, routeThreadId, tabId, threadId]);
+
+  useEffect(() => {
+    if (!canGrab && isGrabbing) {
+      desktopBrowser?.cancelGrab?.(tabId);
+      setIsGrabbing(false);
+    }
+  }, [canGrab, desktopBrowser, isGrabbing, tabId]);
+
   if (desktopBrowser === null) {
     return <BrowserUnavailable />;
   }
@@ -902,6 +990,9 @@ export function BrowserTabContent({
         }}
         onReloadOrStop={handleReloadOrStop}
         onOpenExternal={handleOpenExternal}
+        canGrab={canGrab}
+        isGrabbing={isGrabbing}
+        onToggleGrab={handleToggleGrab}
         locationShortcut={locationShortcut}
         reloadShortcut={reloadShortcut}
       />

@@ -39,6 +39,7 @@ import { getFilePreviewLineRangeStart } from "@bb/client-core";
 import { resolveAbsoluteFilePath } from "@/lib/absolute-file-path";
 import { useAppCommandHandler } from "@/components/commands/AppCommandProvider";
 import type { MarkdownPreviewLinkHandler } from "@/components/ui/markdown-link";
+import type { MarkdownGrabSelectedResult } from "@/lib/markdown-grab-quote";
 
 export const ROOT_COMPOSE_FIXED_PANEL_STATE_ID = "root-compose";
 
@@ -60,6 +61,7 @@ interface RootComposePanelTabContentProps {
   onOpenPanelLink: MarkdownPreviewLinkHandler;
   onSelectFileSearchResult: (selection: FileSearchSelection) => void;
   onSelectionAddToChat: (text: string) => void;
+  onMarkdownGrab?: (result: MarkdownGrabSelectedResult) => void;
   onStartTerminal: () => void;
   pane: SecondaryPanelPaneRenderContext;
   primaryHostId: string | null;
@@ -82,6 +84,7 @@ interface RootComposeFilePreviewTabContentProps {
   isProjectless: boolean;
   fileOpenerSource: PluginFileOpenerSource | null;
   onSelectionAddToChat: (text: string) => void;
+  onMarkdownGrab?: (result: MarkdownGrabSelectedResult) => void;
   pluginPanelTab?: PluginPanelFixedPanelTab;
   primaryHostId: string | null;
   projectSources: SidebarProject["sources"];
@@ -145,6 +148,7 @@ export function RootComposePanelTabContent({
   onOpenPanelLink,
   onSelectFileSearchResult,
   onSelectionAddToChat,
+  onMarkdownGrab,
   onStartTerminal,
   pane,
   primaryHostId,
@@ -196,14 +200,10 @@ export function RootComposePanelTabContent({
             onSelectFileSearchResult(selection);
           }}
           recentItemsThreadId={ROOT_COMPOSE_FIXED_PANEL_STATE_ID}
-          onOpenBrowser={
-            rootPanelThreadId
-              ? () => {
-                  onActivateTab(tab.id);
-                  onOpenBrowser();
-                }
-              : undefined
-          }
+          onOpenBrowser={() => {
+            onActivateTab(tab.id);
+            onOpenBrowser();
+          }}
           onStartTerminal={
             canCreateTerminal
               ? () => {
@@ -227,6 +227,7 @@ export function RootComposePanelTabContent({
           isPanelOpen={isPanelOpen}
           isProjectless={isProjectless}
           onSelectionAddToChat={onSelectionAddToChat}
+          onMarkdownGrab={onMarkdownGrab}
           primaryHostId={primaryHostId}
           projectSources={projectSources}
           projects={projects}
@@ -258,6 +259,7 @@ export function RootComposePanelTabContent({
           isPanelOpen={isPanelOpen}
           isProjectless={isProjectless}
           onSelectionAddToChat={onSelectionAddToChat}
+          onMarkdownGrab={onMarkdownGrab}
           pluginPanelTab={tab}
           primaryHostId={primaryHostId}
           projectSources={projectSources}
@@ -279,6 +281,7 @@ function RootComposeFilePreviewTabContent({
   isPanelOpen,
   isProjectless,
   onSelectionAddToChat,
+  onMarkdownGrab,
   pluginPanelTab,
   primaryHostId,
   projectSources,
@@ -435,6 +438,7 @@ function RootComposeFilePreviewTabContent({
             lineRange={tab.lineRange}
             onOpenInEditor={onOpenInEditor}
             onSelectionAddToChat={onSelectionAddToChat}
+            onMarkdownGrab={onMarkdownGrab}
             source={tab.source}
             statusLabel={tab.statusLabel}
             threadId={imageThreadId}
@@ -449,6 +453,7 @@ function RootComposeFilePreviewTabContent({
             lineRange={tab.lineRange}
             onOpenInEditor={onOpenInEditor}
             onSelectionAddToChat={onSelectionAddToChat}
+            onMarkdownGrab={onMarkdownGrab}
             projectId={projectPreviewId}
             rootPath={projectPreviewRootPath}
             threadId={imageThreadId}
@@ -478,6 +483,7 @@ function RootComposeFilePreviewTabContent({
             lineRange={tab.lineRange}
             onOpenInEditor={onOpenInEditor}
             onSelectionAddToChat={onSelectionAddToChat}
+            onMarkdownGrab={onMarkdownGrab}
             threadId={threadId}
           />
         ) : (
@@ -503,6 +509,7 @@ function RootComposeFilePreviewTabContent({
           lineRange={tab.lineRange}
           onOpenInEditor={onOpenInEditor}
           onSelectionAddToChat={onSelectionAddToChat}
+          onMarkdownGrab={onMarkdownGrab}
           threadId={storageThreadId}
         />
       ) : (

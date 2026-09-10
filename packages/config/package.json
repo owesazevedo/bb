@@ -68,6 +68,11 @@
       "types": "./src/loopback.ts",
       "default": "./src/loopback.ts"
     },
+    "./file-preview-origin": {
+      "source": "./src/file-preview-origin.ts",
+      "types": "./src/file-preview-origin.ts",
+      "default": "./src/file-preview-origin.ts"
+    },
     "./runtime": {
       "source": "./src/runtime.ts",
       "types": "./src/runtime.ts",

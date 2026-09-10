@@ -11,6 +11,18 @@ import type {
   PromptMentionSuggestion,
   ProviderCommandSuggestion,
 } from "@bb/client-core";
+import {
+  isLegacyBrowserGrabChipLine,
+  serializeBrowserGrabChip,
+  type BrowserGrabChipRegion,
+} from "@/lib/browser-grab-quote";
+import {
+  findPromptGrabChipRegions,
+  isMarkdownGrabChipRegion,
+  MARKDOWN_GRAB_PAYLOAD_NODE_NAME,
+  serializeMarkdownGrabChip,
+} from "@/lib/markdown-grab-quote";
+import { BROWSER_GRAB_PAYLOAD_NODE_NAME } from "./prompt-browser-grab-payload-extension";
 
 export interface PromptEditorValue {
   text: string;
@@ -84,6 +96,216 @@ function normalizeMentions(
         mention.end <= value.text.length,
     )
     .sort((left, right) => left.start - right.start || left.end - right.end);
+}
+
+function mentionOverlapsGrab(
+  mention: PromptTextMention,
+  grab: BrowserGrabChipRegion,
+): boolean {
+  return mention.start < grab.end && grab.start < mention.end;
+}
+
+function mentionIsInsideGrab(
+  mention: PromptTextMention,
+  grab: BrowserGrabChipRegion,
+): boolean {
+  return mention.start >= grab.start && mention.end <= grab.end;
+}
+
+function mentionsOutsideGrabRegions(
+  mentions: readonly PromptTextMention[],
+  grabs: readonly BrowserGrabChipRegion[],
+): PromptTextMention[] {
+  return mentions.filter(
+    (mention) =>
+      !grabs.some(
+        (grab) =>
+          mentionIsInsideGrab(mention, grab) ||
+          mentionOverlapsGrab(mention, grab),
+      ),
+  );
+}
+
+function grabInlineNode(
+  grab: BrowserGrabChipRegion,
+  marks?: JSONContent["marks"],
+): JSONContent {
+  return {
+    type: isMarkdownGrabChipRegion(grab)
+      ? MARKDOWN_GRAB_PAYLOAD_NODE_NAME
+      : BROWSER_GRAB_PAYLOAD_NODE_NAME,
+    attrs: {
+      payload: grab.payload,
+      tagName: grab.tagName,
+      title: grab.title,
+    },
+    ...(marks ? { marks } : {}),
+  };
+}
+
+function lineExclusiveEnd(
+  lineGlobalStarts: readonly number[],
+  lines: readonly string[],
+  lineIndex: number,
+): number {
+  if (lineIndex + 1 < lines.length) {
+    return lineGlobalStarts[lineIndex + 1]!;
+  }
+  return lineGlobalStarts[lineIndex]! + lines[lineIndex]!.length;
+}
+
+function lastLineIndexOverlappingGrab({
+  fromIndex,
+  grab,
+  lineGlobalStarts,
+  lines,
+}: {
+  fromIndex: number;
+  grab: BrowserGrabChipRegion;
+  lineGlobalStarts: readonly number[];
+  lines: readonly string[];
+}): number {
+  let last = fromIndex;
+  for (let index = fromIndex; index < lines.length; index += 1) {
+    const start = lineGlobalStarts[index]!;
+    const end = lineExclusiveEnd(lineGlobalStarts, lines, index);
+    if (start < grab.end && grab.start < end) {
+      last = index;
+      continue;
+    }
+    if (start >= grab.end) {
+      break;
+    }
+  }
+  return last;
+}
+
+function grabStartingOnLine({
+  grabs,
+  lineEnd,
+  lineStart,
+}: {
+  grabs: readonly BrowserGrabChipRegion[];
+  lineEnd: number;
+  lineStart: number;
+}): BrowserGrabChipRegion | null {
+  return (
+    grabs.find(
+      (grab) => grab.start >= lineStart && grab.start < lineEnd,
+    ) ?? null
+  );
+}
+
+function grabRegionWouldSplitLineGroup({
+  fromIndex,
+  grab,
+  lineGlobalStarts,
+  lines,
+}: {
+  fromIndex: number;
+  grab: BrowserGrabChipRegion;
+  lineGlobalStarts: readonly number[];
+  lines: readonly string[];
+}): boolean {
+  const last = lastLineIndexOverlappingGrab({
+    fromIndex,
+    grab,
+    lineGlobalStarts,
+    lines,
+  });
+  const quote = isQuoteLine(lines[fromIndex]!);
+  for (let index = fromIndex; index <= last; index += 1) {
+    const line = lines[index]!;
+    if (isQuoteLine(line) !== quote || isLegacyBrowserGrabChipLine(line)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function lineIndexContainingOffset({
+  lineGlobalStarts,
+  lines,
+  offset,
+}: {
+  lineGlobalStarts: readonly number[];
+  lines: readonly string[];
+  offset: number;
+}): number {
+  for (let index = 0; index < lines.length; index += 1) {
+    const start = lineGlobalStarts[index]!;
+    const exclusiveEnd = lineExclusiveEnd(lineGlobalStarts, lines, index);
+    if (offset >= start && offset < exclusiveEnd) {
+      return index;
+    }
+  }
+  const last = lines.length - 1;
+  if (last >= 0 && offset === lineGlobalStarts[last]! + lines[last]!.length) {
+    return last;
+  }
+  return 0;
+}
+
+function firstGrabLineIndexSplitByLineGroup({
+  fromIndex,
+  grabs,
+  lineGlobalStarts,
+  lines,
+  naturalEnd,
+}: {
+  fromIndex: number;
+  grabs: readonly BrowserGrabChipRegion[];
+  lineGlobalStarts: readonly number[];
+  lines: readonly string[];
+  naturalEnd: number;
+}): number | null {
+  for (const grab of grabs) {
+    const grabLine = lineIndexContainingOffset({
+      lineGlobalStarts,
+      lines,
+      offset: grab.start,
+    });
+    if (grabLine <= fromIndex || grabLine >= naturalEnd) {
+      continue;
+    }
+    const last = lastLineIndexOverlappingGrab({
+      fromIndex: grabLine,
+      grab,
+      lineGlobalStarts,
+      lines,
+    });
+    if (last >= naturalEnd) {
+      return grabLine;
+    }
+  }
+  return null;
+}
+
+function naturalLineGroupEnd({
+  fromIndex,
+  lines,
+  quote,
+  richTextMarkdown,
+}: {
+  fromIndex: number;
+  lines: readonly string[];
+  quote: boolean;
+  richTextMarkdown: boolean;
+}): number {
+  let end = fromIndex;
+  while (
+    end < lines.length &&
+    isQuoteLine(lines[end]!) === quote &&
+    !(
+      !quote &&
+      richTextMarkdown &&
+      end > fromIndex &&
+      isRichMarkdownBlockStart(lines[end]!)
+    )
+  ) {
+    end += 1;
+  }
+  return end;
 }
 
 function isQuoteLine(line: string): boolean {
@@ -294,24 +516,50 @@ function createMarkdownMarkSweep(
 }
 
 function createMarkdownBoundarySweep({
+  grabs = [],
   mentions,
   markers,
   text,
 }: {
+  grabs?: readonly BrowserGrabChipRegion[];
   mentions: readonly PromptTextMention[];
   markers: readonly MarkdownMarkerRange[];
   text: string;
 }): (position: number) => number {
+  let grabIndex = 0;
   let markerIndex = 0;
   let mentionIndex = 0;
   let nextNewline = text.indexOf("\n");
   return (position) => {
+    while (grabIndex < grabs.length && grabs[grabIndex]!.end <= position) {
+      grabIndex += 1;
+    }
+    const grab = grabIndex < grabs.length ? grabs[grabIndex]! : null;
+    if (grab && position > grab.start && position < grab.end) {
+      return grab.end;
+    }
+
     let boundary = text.length;
+    if (grab && grab.start > position) {
+      boundary = Math.min(boundary, grab.start);
+    }
+
     while (
       markerIndex < markers.length &&
       markers[markerIndex]!.start <= position
     ) {
       markerIndex += 1;
+    }
+    while (markerIndex < markers.length) {
+      const markerStart = markers[markerIndex]!.start;
+      const enclosed = grabs.some(
+        (region) => markerStart >= region.start && markerStart < region.end,
+      );
+      if (enclosed) {
+        markerIndex += 1;
+        continue;
+      }
+      break;
     }
     if (markerIndex < markers.length) {
       boundary = Math.min(boundary, markers[markerIndex]!.start);
@@ -322,10 +570,30 @@ function createMarkdownBoundarySweep({
     ) {
       mentionIndex += 1;
     }
+    while (mentionIndex < mentions.length) {
+      const mention = mentions[mentionIndex]!;
+      const enclosed = grabs.some((region) =>
+        mentionOverlapsGrab(mention, region),
+      );
+      if (enclosed) {
+        mentionIndex += 1;
+        continue;
+      }
+      break;
+    }
     if (mentionIndex < mentions.length) {
       boundary = Math.min(boundary, mentions[mentionIndex]!.start);
     }
     while (nextNewline !== -1 && nextNewline <= position) {
+      nextNewline = text.indexOf("\n", nextNewline + 1);
+    }
+    while (nextNewline !== -1) {
+      const enclosed = grabs.some(
+        (region) => nextNewline >= region.start && nextNewline < region.end,
+      );
+      if (!enclosed) {
+        break;
+      }
       nextNewline = text.indexOf("\n", nextNewline + 1);
     }
     if (nextNewline !== -1) {
@@ -360,11 +628,16 @@ function appendMarkedTextContent({
 function promptEditorInlineMarkdownContentFromValue(
   value: PromptEditorContentValue,
 ): JSONContent[] {
-  const mentions = normalizeMentions(value);
+  const grabs = findPromptGrabChipRegions(value.text);
+  const mentions = mentionsOutsideGrabRegions(
+    normalizeMentions(value),
+    grabs,
+  );
   const ranges = collectMarkdownMarkRanges(value.text);
   const content: JSONContent[] = [];
   let cursor = 0;
   let mentionIndex = 0;
+  let grabIndex = 0;
 
   const markerByStart = new Map<number, MarkdownMarkerRange>();
   for (const marker of ranges.markers) {
@@ -372,12 +645,29 @@ function promptEditorInlineMarkdownContentFromValue(
   }
   const marksAt = createMarkdownMarkSweep(ranges.marks);
   const boundaryAfter = createMarkdownBoundarySweep({
+    grabs,
     mentions,
     markers: ranges.markers,
     text: value.text,
   });
 
   while (cursor < value.text.length) {
+    while (grabIndex < grabs.length && grabs[grabIndex]!.end <= cursor) {
+      grabIndex += 1;
+    }
+    const grab = grabIndex < grabs.length ? grabs[grabIndex]! : null;
+    if (grab && cursor > grab.start && cursor < grab.end) {
+      cursor = grab.end;
+      continue;
+    }
+    const marks = marksAt(cursor);
+    if (grab && grab.start === cursor) {
+      content.push(grabInlineNode(grab, marks));
+      cursor = grab.end;
+      grabIndex += 1;
+      continue;
+    }
+
     const marker = markerByStart.get(cursor);
     if (marker) {
       cursor = marker.end;
@@ -394,7 +684,6 @@ function promptEditorInlineMarkdownContentFromValue(
       mentionIndex < mentions.length && mentions[mentionIndex]!.start === cursor
         ? mentions[mentionIndex]
         : null;
-    const marks = marksAt(cursor);
     if (mention) {
       content.push({
         type: "mention",
@@ -715,6 +1004,7 @@ export function promptEditorContentFromValue(
     offset += line.length + 1;
   }
 
+  const grabs = findPromptGrabChipRegions(value.text);
   const blocks: JSONContent[] = [];
   const markdownLines: MarkdownLine[] = lines.map((line, lineIndex) => ({
     start: lineGlobalStarts[lineIndex]!,
@@ -722,7 +1012,44 @@ export function promptEditorContentFromValue(
   }));
   let index = 0;
   while (index < lines.length) {
+    const lineStart = lineGlobalStarts[index]!;
+    const lineEnd = lineExclusiveEnd(lineGlobalStarts, lines, index);
+    const grabOnLine = grabStartingOnLine({
+      grabs,
+      lineEnd,
+      lineStart,
+    });
     const quote = isQuoteLine(lines[index]!);
+    const naturalEnd = naturalLineGroupEnd({
+      fromIndex: index,
+      lines,
+      quote,
+      richTextMarkdown: options.richTextMarkdown === true,
+    });
+    if (grabOnLine) {
+      const last = lastLineIndexOverlappingGrab({
+        fromIndex: index,
+        grab: grabOnLine,
+        lineGlobalStarts,
+        lines,
+      });
+      if (
+        grabRegionWouldSplitLineGroup({
+          fromIndex: index,
+          grab: grabOnLine,
+          lineGlobalStarts,
+          lines,
+        }) ||
+        last >= naturalEnd
+      ) {
+        const lastLine = lines[last]!;
+        const spanEnd = lineGlobalStarts[last]! + lastLine.length;
+        blocks.push(paragraphFromSpan(value, lineStart, spanEnd, options));
+        index = last + 1;
+        continue;
+      }
+    }
+
     if (!quote && options.richTextMarkdown) {
       const heading = markdownHeadingFromLine({
         line: markdownLines[index]!,
@@ -752,18 +1079,16 @@ export function promptEditorContentFromValue(
       }
     }
 
-    let end = index;
-    while (
-      end < lines.length &&
-      isQuoteLine(lines[end]!) === quote &&
-      !(
-        !quote &&
-        options.richTextMarkdown &&
-        end > index &&
-        isRichMarkdownBlockStart(lines[end]!)
-      )
-    ) {
-      end += 1;
+    let end = naturalEnd;
+    const splitGrabLine = firstGrabLineIndexSplitByLineGroup({
+      fromIndex: index,
+      grabs,
+      lineGlobalStarts,
+      lines,
+      naturalEnd,
+    });
+    if (splitGrabLine !== null) {
+      end = splitGrabLine;
     }
     const groupLines = lines.slice(index, end);
     const groupStarts = lineGlobalStarts.slice(index, end);
@@ -800,25 +1125,67 @@ export function promptEditorInlineContentFromValue(
     return promptEditorInlineMarkdownContentFromValue(value);
   }
 
+  const grabs = findPromptGrabChipRegions(value.text);
+  const mentions = mentionsOutsideGrabRegions(
+    normalizeMentions(value),
+    grabs,
+  );
   const content: JSONContent[] = [];
   let cursor = 0;
+  let grabIndex = 0;
+  let mentionIndex = 0;
 
-  for (const mention of normalizeMentions(value)) {
-    if (mention.start < cursor) {
+  while (cursor < value.text.length) {
+    while (grabIndex < grabs.length && grabs[grabIndex]!.end <= cursor) {
+      grabIndex += 1;
+    }
+    const grab = grabIndex < grabs.length ? grabs[grabIndex]! : null;
+    if (grab && cursor > grab.start && cursor < grab.end) {
+      cursor = grab.end;
       continue;
     }
-    content.push(...splitTextContent(value.text.slice(cursor, mention.start)));
-    content.push({
-      type: "mention",
-      attrs: {
-        resource: mention.resource,
-        serializedText: value.text.slice(mention.start, mention.end),
-      } satisfies PromptEditorMentionAttrs,
-    });
-    cursor = mention.end;
-  }
+    if (grab && grab.start === cursor) {
+      content.push(grabInlineNode(grab));
+      cursor = grab.end;
+      grabIndex += 1;
+      continue;
+    }
 
-  content.push(...splitTextContent(value.text.slice(cursor)));
+    while (
+      mentionIndex < mentions.length &&
+      mentions[mentionIndex]!.end <= cursor
+    ) {
+      mentionIndex += 1;
+    }
+    const mention =
+      mentionIndex < mentions.length && mentions[mentionIndex]!.start === cursor
+        ? mentions[mentionIndex]
+        : null;
+    if (mention) {
+      content.push({
+        type: "mention",
+        attrs: {
+          resource: mention.resource,
+          serializedText: value.text.slice(mention.start, mention.end),
+        } satisfies PromptEditorMentionAttrs,
+      });
+      cursor = mention.end;
+      mentionIndex += 1;
+      continue;
+    }
+
+    const nextGrabStart = grab?.start ?? value.text.length;
+    const nextMentionStart =
+      mentionIndex < mentions.length
+        ? mentions[mentionIndex]!.start
+        : value.text.length;
+    let end = Math.min(nextGrabStart, nextMentionStart);
+    if (end <= cursor) {
+      end = cursor + 1;
+    }
+    content.push(...splitTextContent(value.text.slice(cursor, end)));
+    cursor = end;
+  }
 
   return content;
 }
@@ -938,6 +1305,40 @@ function serializePromptEditorNode(
       }
       return;
     }
+    if (
+      node.type.name === BROWSER_GRAB_PAYLOAD_NODE_NAME ||
+      node.type.name === MARKDOWN_GRAB_PAYLOAD_NODE_NAME
+    ) {
+      closeActiveInlineDelimiters();
+      const serialized =
+        node.type.name === MARKDOWN_GRAB_PAYLOAD_NODE_NAME
+          ? serializeMarkdownGrabChip({
+              payload:
+                typeof node.attrs.payload === "string" ? node.attrs.payload : "",
+              tagName:
+                typeof node.attrs.tagName === "string"
+                  ? node.attrs.tagName
+                  : "note",
+            })
+          : serializeBrowserGrabChip({
+              payload:
+                typeof node.attrs.payload === "string" ? node.attrs.payload : "",
+              tagName:
+                typeof node.attrs.tagName === "string"
+                  ? node.attrs.tagName
+                  : "element",
+            });
+      const start = text.length;
+      text += serialized;
+      offsetMapping.push({
+        textFrom: start,
+        textTo: text.length,
+        docFrom: nodePosition,
+        docTo: nodePosition + node.nodeSize,
+        kind: "text",
+      });
+      return;
+    }
     appendChildren(node, nodePosition);
   };
 
@@ -1041,7 +1442,9 @@ function serializePromptEditorNode(
     if (
       node.type.name === "text" ||
       node.type.name === "hardBreak" ||
-      node.type.name === "mention"
+      node.type.name === "mention" ||
+      node.type.name === BROWSER_GRAB_PAYLOAD_NODE_NAME ||
+      node.type.name === MARKDOWN_GRAB_PAYLOAD_NODE_NAME
     ) {
       appendInline(node, nodePosition);
       return;

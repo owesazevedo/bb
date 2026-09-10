@@ -82,6 +82,10 @@ import {
 import { isTransientReadError } from "@/hooks/queries/query-helpers";
 import { getPromptDraftAccessor } from "@/hooks/usePromptDraftStorage";
 import { subscribeComposerFocusRequests } from "@/lib/composer-focus-requests";
+import {
+  applyMarkdownGrabToDraftAccessor,
+  type MarkdownGrabSelectedResult,
+} from "@/lib/markdown-grab-quote";
 import { ThreadGitActionDialog } from "@/components/dialogs/ThreadGitActionDialog";
 import { PageShell } from "@/components/ui/page-shell.js";
 import { RouteLoadingSkeleton } from "@/components/ui/route-loading-skeleton";
@@ -228,8 +232,12 @@ import {
 } from "@/lib/app-navigation-host";
 import { openAppFixedTabFromDestinations } from "@/lib/app-fixed-tab-navigation";
 import {
+<<<<<<< Updated upstream
   getFileBasename,
   normalizeExperimentalFileOpenOptions,
+=======
+  normalizeAppFilePreviewIntent,
+>>>>>>> Stashed changes
   toFilePreviewLineRange,
 } from "@/lib/live-file-navigation";
 import { getFilePreviewLineRangeStart } from "@bb/client-core";
@@ -1187,6 +1195,16 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     },
     [addQuoteToComposer, dismissCompactKeyboard],
   );
+  const handleMarkdownGrab = useCallback(
+    (result: MarkdownGrabSelectedResult) => {
+      dismissCompactKeyboard();
+      if (applyMarkdownGrabToDraftAccessor(selectionPromptDraft, result)) {
+        appToast.success("Note added to chat");
+      }
+      setComposerFocusRequestNonce((nonce) => nonce + 1);
+    },
+    [dismissCompactKeyboard, selectionPromptDraft],
+  );
   const sendSideChatMessageToMain =
     useCallback<ThreadTimelineSendToMainMessageHandler>(
       (target) => {
@@ -1341,7 +1359,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
   );
   const handleOpenLiveFilePreview = useCallback(
     (intent: AppFilePreviewIntent): boolean => {
-      const normalized = normalizeExperimentalFileOpenOptions(intent);
+      const normalized = normalizeAppFilePreviewIntent(intent);
       if (normalized === null || thread === undefined) return false;
       const lineRange = toFilePreviewLineRange(normalized.location);
       const options =
@@ -2635,6 +2653,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
               rootPath: workspacePreviewRootPath,
             })}
             onOpenInEditor={handleOpenFileInEditor}
+            onMarkdownGrab={handleMarkdownGrab}
             onSelectionAddToChat={handleSelectionAddToChat}
             source={tab.source}
             statusLabel={tab.statusLabel}
@@ -2662,6 +2681,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
               }),
             })}
             onOpenInEditor={handleOpenHostFileInEditor}
+            onMarkdownGrab={handleMarkdownGrab}
             onSelectionAddToChat={handleSelectionAddToChat}
             threadId={thread.id}
           />
@@ -2687,6 +2707,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
               rootPath: threadStorageRootPath,
             })}
             onOpenInEditor={handleOpenStorageFileInEditor}
+            onMarkdownGrab={handleMarkdownGrab}
             onSelectionAddToChat={handleSelectionAddToChat}
             threadId={thread.id}
           />

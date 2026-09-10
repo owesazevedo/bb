@@ -20,6 +20,16 @@ const alwaysReplaceable = () => true;
 const neverReplaceable = () => false;
 
 describe("desktop update support", () => {
+  it("disables official update feeds for the local fork packaged app", () => {
+    expect(
+      resolveDesktopUpdateSupport({
+        canReplaceAppImage: neverReplaceable,
+        env: { BB_DESKTOP_FORK_ISOLATION: "1" },
+        platform: "macos",
+      }),
+    ).toEqual({ autoUpdate: false, versionCheck: false });
+  });
+
   it("enables both update paths on macOS", () => {
     expect(
       resolveDesktopUpdateSupport({

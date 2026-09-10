@@ -12,8 +12,23 @@ describe("isAllowedBrowserUrl", () => {
     expect(isAllowedBrowserUrl("about:blank")).toBe(true);
   });
 
+<<<<<<< Updated upstream
   it("blocks unsupported schemes and unparseable URLs", () => {
     expect(isAllowedBrowserUrl("file:///etc/passwd")).toBe(false);
+=======
+  it("allows the privileged HTML preview scheme", () => {
+    expect(
+      isAllowedBrowserUrl(
+        "bb-preview://preview.localhost:11003/api/v1/file-previews/lease/index.html",
+      ),
+    ).toBe(true);
+    expect(
+      isAllowedBrowserUrl("bb-preview://preview.localhost:11003/api/v1/threads"),
+    ).toBe(false);
+  });
+
+  it("blocks non-http(s) and unparseable URLs", () => {
+>>>>>>> Stashed changes
     expect(isAllowedBrowserUrl("javascript:alert(1)")).toBe(false);
     expect(isAllowedBrowserUrl("data:text/html,<h1>x</h1>")).toBe(false);
     expect(isAllowedBrowserUrl("about:config")).toBe(false);
@@ -22,6 +37,13 @@ describe("isAllowedBrowserUrl", () => {
     expect(isAllowedBrowserUrl(" about:blank")).toBe(false);
     expect(isAllowedBrowserUrl("not a url")).toBe(false);
     expect(isAllowedBrowserUrl("")).toBe(false);
+  });
+
+  it("allows local file URLs for in-app HTML preview", () => {
+    expect(isAllowedBrowserUrl("file:///Users/me/landing/index.html")).toBe(
+      true,
+    );
+    expect(isAllowedBrowserUrl("file://host/etc/passwd")).toBe(false);
   });
 });
 

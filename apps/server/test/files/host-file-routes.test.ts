@@ -162,6 +162,20 @@ describe("host file routes", () => {
       );
       expect(content.headers.get("x-content-type-options")).toBe("nosniff");
       await expect(content.text()).resolves.toContain("<h1>Report</h1>");
+
+      const isolated = await harness.app.request(
+        `http://preview.localhost${lease.baseUrl}/report.html`,
+      );
+      expect(isolated.status).toBe(200);
+      expect(isolated.headers.get("content-security-policy")).toBeNull();
+      expect(isolated.headers.get("content-type")).toBe(
+        "text/html; charset=utf-8",
+      );
+
+      const blocked = await harness.app.request(
+        "http://preview.localhost/api/v1/threads",
+      );
+      expect(blocked.status).toBe(403);
       expect(commands).toEqual([
         {
           type: "host.read_file",
@@ -171,6 +185,11 @@ describe("host file routes", () => {
             kind: "sha256",
             values: ["d".repeat(64)],
           },
+        },
+        {
+          type: "host.read_file",
+          path: "/notes/report.html",
+          rootPath: "/notes",
         },
         {
           type: "host.read_file",

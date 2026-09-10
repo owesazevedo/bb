@@ -33,11 +33,22 @@ import type {
   UrlTransform,
 } from "react-markdown";
 import rehypeRaw from "rehype-raw";
-import rehypeSanitize from "rehype-sanitize";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { ImageLightbox } from "./image-lightbox.js";
+import { stripBrowserGrabHiddenPayload } from "@/lib/browser-grab-quote";
+import { stripMarkdownGrabHiddenPayload } from "@/lib/markdown-grab-quote";
+import {
+  buildBrowserGrabChipComponent,
+  remarkBrowserGrabChips,
+} from "./markdown-browser-grab.js";
+import {
+  buildMarkdownGrabChipComponent,
+  remarkMarkdownGrabChips,
+} from "./markdown-markdown-grab.js";
+import { remarkObsidianMarkdown } from "./remark-obsidian-markdown.js";
 import { normalizeMathFences } from "./markdown-math-fences.js";
 import {
   markdownMayContainMath,
@@ -116,9 +127,11 @@ interface MarkdownPreviewProps {
   promptMentions?: MarkdownPromptMentions;
   messageDirectives?: MarkdownMessageDirectives;
   urlTransform?: UrlTransform;
+  variant?: MarkdownPreviewVariant;
 }
 
 type MarkdownImagePolicy = "alt-text" | "render";
+type MarkdownPreviewVariant = "message" | "document";
 
 export interface MarkdownThreadMentions {
   mentions: readonly PromptTextMention[];
@@ -145,6 +158,7 @@ interface BuildMarkdownComponentsArgs {
   threadMentions?: MarkdownThreadMentions;
   promptMentions?: ResolvedPromptMentions;
   messageDirectives?: ResolvedMessageDirectiveRender;
+  variant: MarkdownPreviewVariant;
 }
 
 interface ResolvedMessageDirectiveRender {
@@ -244,7 +258,10 @@ interface MarkdownCodeRendererProps extends MarkdownCodeProps {
   preferredTheme: Theme;
   rewriteLocalhostLinks: boolean;
 }
-type MarkdownHeadingProps = ComponentPropsWithoutRef<"h1"> & ExtraProps;
+type MarkdownHeadingProps = ComponentPropsWithoutRef<"h1"> &
+  ExtraProps & {
+    variant?: MarkdownPreviewVariant;
+  };
 type MarkdownHrProps = ComponentPropsWithoutRef<"hr"> & ExtraProps;
 type MarkdownImageProps = ComponentPropsWithoutRef<"img"> & ExtraProps;
 type MarkdownImageRenderAttributes = Omit<
@@ -269,9 +286,36 @@ const MARKDOWN_TABLE_BREAKOUT_WIDTH = `max(100%, min(1100px, 100cqw - 2rem, var(
 const MARKDOWN_CONTENT_WIDTH_VARIABLE = "--md-content-w";
 const MARKDOWN_SOURCE_COLOR_SCHEME_MEDIA_PATTERN =
   /^\(\s*prefers-color-scheme\s*:\s*(dark|light)\s*\)$/iu;
+const MARKDOWN_SANITIZE_SCHEMA = {
+  ...defaultSchema,
+  tagNames: [
+    ...(defaultSchema.tagNames ?? []),
+    "bb-browser-grab-chip",
+    "bb-md-grab-chip",
+  ],
+  attributes: {
+    ...defaultSchema.attributes,
+    "bb-browser-grab-chip": ["dataTagName", "data-tag-name", "title"],
+    "bb-md-grab-chip": ["dataTagName", "data-tag-name", "title"],
+    blockquote: [
+      ...(defaultSchema.attributes?.blockquote ?? []),
+      "dataCallout",
+      "data-callout",
+    ],
+    span: [
+      ...(defaultSchema.attributes?.span ?? []),
+      "className",
+      "class",
+      "dataTarget",
+      "data-target",
+      "title",
+    ],
+  },
+};
+
 const MARKDOWN_HTML_REHYPE_PLUGINS: MarkdownRehypePlugins = [
   rehypeRaw,
-  rehypeSanitize,
+  [rehypeSanitize, MARKDOWN_SANITIZE_SCHEMA],
 ];
 
 const MARKDOWN_PLAIN_REHYPE_PLUGINS: MarkdownRehypePlugins = [];
@@ -421,6 +465,7 @@ const areMarkdownPreviewPropsEqual: MarkdownPreviewPropsEqual = (
   previous.className === next.className &&
   previous.content === next.content &&
   (previous.imagePolicy ?? "render") === (next.imagePolicy ?? "render") &&
+  (previous.variant ?? "message") === (next.variant ?? "message") &&
   previous.urlTransform === next.urlTransform &&
   areMarkdownThreadMentionsEqual({
     next: next.threadMentions,
@@ -808,17 +853,35 @@ function MarkdownPre({ children }: MarkdownPreProps) {
   return <>{children}</>;
 }
 
-function MarkdownH1({ children }: MarkdownHeadingProps) {
+function MarkdownH1({
+  children,
+  variant = "message",
+}: MarkdownHeadingProps) {
   return (
-    <h1 className="mb-2 mt-4 text-lg font-semibold text-foreground first:mt-0">
+    <h1
+      className={
+        variant === "document"
+          ? "mb-3 mt-6 text-2xl font-semibold text-foreground first:mt-0"
+          : "mb-2 mt-4 text-lg font-semibold text-foreground first:mt-0"
+      }
+    >
       {children}
     </h1>
   );
 }
 
-function MarkdownH2({ children }: MarkdownHeadingProps) {
+function MarkdownH2({
+  children,
+  variant = "message",
+}: MarkdownHeadingProps) {
   return (
-    <h2 className="mb-2 mt-4 text-base font-semibold text-foreground first:mt-0">
+    <h2
+      className={
+        variant === "document"
+          ? "mb-3 mt-5 text-xl font-semibold text-foreground first:mt-0"
+          : "mb-2 mt-4 text-base font-semibold text-foreground first:mt-0"
+      }
+    >
       {children}
     </h2>
   );
@@ -893,11 +956,64 @@ function MarkdownListItem({ children }: MarkdownListItemProps) {
   return <li className="mb-1 text-foreground">{children}</li>;
 }
 
-function MarkdownBlockquote({ children }: MarkdownBlockquoteProps) {
+const MARKDOWN_CALLOUT_CLASS: Record<string, string> = {
+  note: "border-blue-500/60 bg-blue-500/5 text-foreground",
+  tip: "border-green-500/60 bg-green-500/5 text-foreground",
+  warning: "border-amber-500/60 bg-amber-500/5 text-foreground",
+  important: "border-purple-500/60 bg-purple-500/5 text-foreground",
+  caution: "border-red-500/60 bg-red-500/5 text-foreground",
+};
+
+function MarkdownBlockquote({
+  children,
+  ...blockquoteProps
+}: MarkdownBlockquoteProps) {
+  const callout =
+    typeof blockquoteProps["data-callout"] === "string"
+      ? blockquoteProps["data-callout"].toLowerCase()
+      : undefined;
+  const calloutClass =
+    callout !== undefined ? MARKDOWN_CALLOUT_CLASS[callout] : undefined;
   return (
-    <blockquote className="my-2 border-l-2 border-surface-selected-border pl-3 text-muted-foreground">
+    <blockquote
+      {...blockquoteProps}
+      className={cn(
+        "my-2 border-l-2 pl-3",
+        calloutClass ?? "border-surface-selected-border text-muted-foreground",
+      )}
+      data-callout={callout}
+    >
       {children}
     </blockquote>
+  );
+}
+
+function MarkdownWikilinkSpan({
+  children,
+  className,
+  title,
+  ...spanProps
+}: ComponentPropsWithoutRef<"span"> & ExtraProps) {
+  const classNames = typeof className === "string" ? className.split(/\s+/) : [];
+  if (classNames.includes("bb-wikilink")) {
+    const target =
+      typeof spanProps["data-target"] === "string"
+        ? spanProps["data-target"]
+        : title;
+    return (
+      <span
+        className="bb-wikilink text-file-accent underline decoration-dotted underline-offset-2"
+        data-target={target}
+        title={target}
+      >
+        {children}
+      </span>
+    );
+  }
+  return (
+    <span className={className} title={title} {...spanProps}>
+      {children}
+    </span>
   );
 }
 
@@ -996,6 +1112,7 @@ function buildMarkdownComponents({
   threadMentions,
   promptMentions,
   messageDirectives,
+  variant,
 }: BuildMarkdownComponentsArgs): Components {
   interface RawThreadIdLabelCandidate {
     end: number;
@@ -1252,11 +1369,13 @@ function buildMarkdownComponents({
   }
 
   const components: Components = {
+    "bb-browser-grab-chip": buildBrowserGrabChipComponent(),
+    "bb-md-grab-chip": buildMarkdownGrabChipComponent(),
     a: MarkdownLink,
     blockquote: MarkdownBlockquote,
     code: MarkdownCodeRenderer,
-    h1: MarkdownH1,
-    h2: MarkdownH2,
+    h1: (props) => <MarkdownH1 {...props} variant={variant} />,
+    h2: (props) => <MarkdownH2 {...props} variant={variant} />,
     h3: MarkdownH3,
     h4: MarkdownH4,
     h5: MarkdownH5,
@@ -1268,6 +1387,7 @@ function buildMarkdownComponents({
     p: MarkdownParagraph,
     pre: MarkdownPre,
     source: MarkdownSource,
+    span: MarkdownWikilinkSpan,
     table: MarkdownTable,
     td: MarkdownTableCell,
     th: MarkdownTableHeader,
@@ -1580,6 +1700,7 @@ function MarkdownPreviewComponent({
   promptMentions,
   messageDirectives,
   urlTransform,
+  variant = "message",
 }: MarkdownPreviewProps) {
   const preferredTheme = usePreferredTheme();
   const [rewriteLocalhostLinks] = useRewriteLocalhostLinksPreference();
@@ -1622,7 +1743,11 @@ function MarkdownPreviewComponent({
     [markdownContent, promptMentions],
   );
   const { frontmatter, body } = useMemo(() => {
-    const split = splitMarkdownFrontmatter(promptMarkdownContent);
+    const split = splitMarkdownFrontmatter(
+      stripMarkdownGrabHiddenPayload(
+        stripBrowserGrabHiddenPayload(promptMarkdownContent),
+      ),
+    );
     return {
       frontmatter: split.frontmatter,
       body: normalizeMathFences(split.body),
@@ -1660,6 +1785,7 @@ function MarkdownPreviewComponent({
                 openWorkspaceFile: messageDirectiveMounts.openWorkspaceFile,
                 openThreadPanel: messageDirectiveMounts.openThreadPanel,
               },
+        variant,
       }),
     [
       linkRouting,
@@ -1669,6 +1795,7 @@ function MarkdownPreviewComponent({
       threadMentions,
       resolvedPromptMentions,
       messageDirectiveMounts,
+      variant,
     ],
   );
   const remarkPlugins = useMemo((): NonNullable<
@@ -1677,6 +1804,9 @@ function MarkdownPreviewComponent({
     const plugins: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = [
       remarkGfm,
       [remarkMath, { singleDollarTextMath: false }],
+      remarkObsidianMarkdown,
+      remarkBrowserGrabChips,
+      remarkMarkdownGrabChips,
     ];
     if (
       threadMentions?.preserveSoftBreaks === true ||
@@ -1737,6 +1867,7 @@ function MarkdownPreviewComponent({
         data-markdown-preview=""
         className={cn(
           "max-w-none break-words text-sm leading-relaxed text-foreground",
+          variant === "document" && "bb-md-note",
           className,
         )}
       >

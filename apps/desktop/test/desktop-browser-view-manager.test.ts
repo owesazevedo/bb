@@ -248,6 +248,15 @@ const electronMock = vi.hoisted(() => {
     isEmpty(): boolean;
     toJPEG(quality: number): Buffer;
     getSize(): { width: number; height: number };
+<<<<<<< Updated upstream
+=======
+    crop(rect: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }): FakeNativeImage;
+>>>>>>> Stashed changes
     resize(size: { width: number; height: number }): FakeNativeImage;
   }
 
@@ -302,8 +311,14 @@ const electronMock = vi.hoisted(() => {
   const fakeCapturedImage: FakeNativeImage = {
     isEmpty: () => false,
     toJPEG: () => Buffer.from("jpeg-bytes"),
+<<<<<<< Updated upstream
     getSize: () => ({ width: 1280, height: 720 }),
     resize: (size) => ({ ...fakeCapturedImage, getSize: () => size }),
+=======
+    getSize: () => ({ width: 800, height: 600 }),
+    crop: () => fakeCapturedImage,
+    resize: () => fakeCapturedImage,
+>>>>>>> Stashed changes
   };
 
   class FakeDebugger {
@@ -383,6 +398,8 @@ const electronMock = vi.hoisted(() => {
     public readonly loadURLCalls: string[] = [];
     public readonly findInPageCalls: FakeFindInPageCall[] = [];
     public readonly stopFindInPageCalls: string[] = [];
+    public readonly executeJavaScriptInIsolatedWorldCalls: string[] = [];
+    public executeJavaScriptInIsolatedWorldResult: unknown = { cancelled: true };
     public reloadCalls = 0;
     public readonly pendingCaptureResolvers: Array<
       (image: FakeNativeImage) => void
@@ -512,6 +529,14 @@ const electronMock = vi.hoisted(() => {
     }
 
     stop(): void {}
+
+    executeJavaScriptInIsolatedWorld(
+      _worldId: number,
+      scripts: Array<{ code: string }>,
+    ): Promise<unknown> {
+      this.executeJavaScriptInIsolatedWorldCalls.push(scripts[0]?.code ?? "");
+      return Promise.resolve(this.executeJavaScriptInIsolatedWorldResult);
+    }
 
     emitDidFailLoad(args: FakeDidFailLoadArgs): void {
       for (const listener of this.listeners["did-fail-load"]) {
@@ -653,6 +678,17 @@ const electronMock = vi.hoisted(() => {
 
     setVisible(visible: boolean): void {
       this.visible = visible;
+    }
+
+    getBounds(): BbDesktopBrowserViewBounds {
+      return (
+        this.boundsCalls.at(-1) ?? {
+          x: 0,
+          y: 0,
+          width: 800,
+          height: 600,
+        }
+      );
     }
   }
 
@@ -3357,6 +3393,13 @@ describe("DesktopBrowserViewManager", () => {
     expect(isAllowedBrowserPermission("media")).toBe(false);
     expect(isAllowedBrowserPermission("notifications")).toBe(false);
     expect(isAllowedBrowserPermission("geolocation")).toBe(false);
+    expect(
+      isAllowedBrowserPermission(
+        "storage-access",
+        "bb-preview://preview.localhost:11003/api/v1/file-previews/lease/index.html",
+      ),
+    ).toBe(true);
+    expect(isAllowedBrowserPermission("storage-access")).toBe(false);
 
     const manager = createDesktopBrowserViewManager({
       partition: "persist:test",
@@ -3400,5 +3443,72 @@ describe("DesktopBrowserViewManager", () => {
       requestGrants.push(granted);
     });
     expect(requestGrants).toEqual([true, false, false]);
+  });
+
+  it("sends a selected grab payload after the guest overlay resolves", async () => {
+    const manager = createDesktopBrowserViewManager({
+      partition: "persist:test",
+    });
+    const hostWindow = new FakeHostWindow({
+      contentBounds: { width: 700, height: 450 },
+      webContentsId: 91,
+    });
+    attachBrowserTab({
+      manager,
+      hostWindow,
+      tabId: "browser:grab",
+      url: "https://example.com/app",
+    });
+    const view = requireFakeView(0);
+    view.webContents.executeJavaScriptInIsolatedWorldResult = {
+      tagName: "BUTTON",
+      selector: "#cta",
+      html: '<button id="cta">Go</button>',
+      css: { color: "rgb(0, 0, 0)", display: "inline-block" },
+      rect: { x: 10, y: 20, width: 40, height: 16 },
+    };
+
+    manager.startGrab({ hostWindow, tabId: "browser:grab" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await settlePendingCaptures(view);
+
+    const grab = hostWindow.webContents.sentPayloads.find(
+      (payload) => "kind" in payload && payload.kind === "selected",
+    );
+    expect(grab).toMatchObject({
+      kind: "selected",
+      tabId: "browser:grab",
+      tagName: "button",
+      selector: "#cta",
+      html: '<button id="cta">Go</button>',
+    });
+    expect(view.webContents.executeJavaScriptInIsolatedWorldCalls.length).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("reports a user cancellation when the guest grab overlay aborts", async () => {
+    const manager = createDesktopBrowserViewManager({
+      partition: "persist:test",
+    });
+    const hostWindow = new FakeHostWindow({
+      contentBounds: { width: 700, height: 450 },
+      webContentsId: 92,
+    });
+    attachBrowserTab({
+      manager,
+      hostWindow,
+      tabId: "browser:grab-cancel",
+      url: "https://example.com/app",
+    });
+
+    manager.startGrab({ hostWindow, tabId: "browser:grab-cancel" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(hostWindow.webContents.sentPayloads).toContainEqual({
+      kind: "cancelled",
+      tabId: "browser:grab-cancel",
+      reason: "user",
+    });
   });
 });

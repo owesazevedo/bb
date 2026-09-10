@@ -1,9 +1,22 @@
+<<<<<<< Updated upstream
 import { useEffect, useMemo } from "react";
+=======
+import { useCallback, useEffect } from "react";
+>>>>>>> Stashed changes
 import type { DiffPresentation } from "@/components/code/code-rendering";
 import type { WorkspaceDiffTarget } from "@bb/domain";
 import type { MarkdownLinkRouting } from "@/components/ui/markdown-link-routing.js";
 import { Skeleton } from "@bb/shared-ui/skeleton";
 import { EmptyStatePanel } from "@bb/shared-ui/empty-state";
+import { appToast } from "@/components/ui/app-toast";
+import { getPromptDraftAccessor } from "@/hooks/usePromptDraftStorage";
+import { requestComposerFocus } from "@/lib/composer-focus-requests";
+import {
+  applyMarkdownGrabToDraftAccessor,
+  type MarkdownGrabSelectedResult,
+} from "@/lib/markdown-grab-quote";
+import type { MarkdownFileSaveHandler } from "./FilePreview";
+import { sdk } from "@/lib/sdk";
 import {
   useEnvironmentDiffFiles,
   useEnvironment,
@@ -68,6 +81,7 @@ interface WorkspaceFilePreviewTabContentProps {
   lineRange: FilePreviewLineRange | null;
   markdownLinkRouting?: MarkdownLinkRouting;
   onSelectionAddToChat?: (text: string) => void;
+  onMarkdownGrab?: (result: MarkdownGrabSelectedResult) => void;
   onOpenInEditor?: (path: string) => void;
   source: EnvironmentFilePreviewSource | null;
   statusLabel: WorkspaceFilePreviewStatusLabel | null;
@@ -83,6 +97,7 @@ interface ProjectFilePreviewTabContentProps {
   lineRange: FilePreviewLineRange | null;
   markdownLinkRouting?: MarkdownLinkRouting;
   onSelectionAddToChat?: (text: string) => void;
+  onMarkdownGrab?: (result: MarkdownGrabSelectedResult) => void;
   onOpenInEditor?: (path: string) => void;
   projectId: string;
   rootPath?: string | null;
@@ -97,6 +112,7 @@ interface HostFilePreviewTabContentProps {
   lineRange: FilePreviewLineRange | null;
   markdownLinkRouting?: MarkdownLinkRouting;
   onSelectionAddToChat?: (text: string) => void;
+  onMarkdownGrab?: (result: MarkdownGrabSelectedResult) => void;
   onOpenInEditor?: (path: string) => void;
   threadId: string;
 }
@@ -106,6 +122,7 @@ interface HostScopedFilePreviewTabContentProps {
   hostId: string;
   isPanelOpen: boolean;
   lineRange: FilePreviewLineRange | null;
+  onMarkdownGrab?: (result: MarkdownGrabSelectedResult) => void;
   onOpenInEditor?: (path: string) => void;
 }
 
@@ -116,8 +133,34 @@ interface ThreadStorageFilePreviewTabContentProps {
   lineRange: FilePreviewLineRange | null;
   markdownLinkRouting?: MarkdownLinkRouting;
   onSelectionAddToChat?: (text: string) => void;
+  onMarkdownGrab?: (result: MarkdownGrabSelectedResult) => void;
   onOpenInEditor?: (path: string) => void;
   threadId: string;
+}
+
+function applyMarkdownGrabToNewThreadComposer(
+  result: MarkdownGrabSelectedResult,
+): boolean {
+  const accessor = getPromptDraftAccessor({ kind: "new-thread" });
+  const applied = applyMarkdownGrabToDraftAccessor(accessor, result);
+  if (applied) {
+    requestComposerFocus(accessor.storageKey);
+    appToast.success("Note added to New thread composer");
+  }
+  return applied;
+}
+
+function resolveMarkdownGrabHandler(args: {
+  onMarkdownGrab?: (result: MarkdownGrabSelectedResult) => void;
+  onSelectionAddToChat?: (text: string) => void;
+}): ((result: MarkdownGrabSelectedResult) => void) | undefined {
+  if (args.onMarkdownGrab !== undefined) {
+    return args.onMarkdownGrab;
+  }
+  if (args.onSelectionAddToChat !== undefined) {
+    return undefined;
+  }
+  return applyMarkdownGrabToNewThreadComposer;
 }
 
 function ThreadDiffSkeleton() {
@@ -316,6 +359,7 @@ export function WorkspaceFilePreviewTabContent({
   lineRange,
   markdownLinkRouting,
   onSelectionAddToChat,
+  onMarkdownGrab,
   onOpenInEditor,
   source,
   statusLabel,
@@ -390,6 +434,10 @@ export function WorkspaceFilePreviewTabContent({
       lineRange={lineRange}
       markdownLinkRouting={resolvedMarkdownLinkRouting}
       onSelectionAddToChat={onSelectionAddToChat}
+      onMarkdownGrab={resolveMarkdownGrabHandler({
+        onMarkdownGrab,
+        onSelectionAddToChat,
+      })}
       onOpenInEditor={onOpenInEditor}
       onRefresh={() => void refetchWorkspaceFilePreview()}
       statusLabel={statusLabel}
@@ -406,6 +454,7 @@ export function ProjectFilePreviewTabContent({
   lineRange,
   markdownLinkRouting,
   onSelectionAddToChat,
+  onMarkdownGrab,
   onOpenInEditor,
   projectId,
   rootPath = null,
@@ -459,6 +508,10 @@ export function ProjectFilePreviewTabContent({
       lineRange={lineRange}
       markdownLinkRouting={resolvedMarkdownLinkRouting}
       onSelectionAddToChat={onSelectionAddToChat}
+      onMarkdownGrab={resolveMarkdownGrabHandler({
+        onMarkdownGrab,
+        onSelectionAddToChat,
+      })}
       onOpenInEditor={onOpenInEditor}
       onRefresh={() => void refetchProjectFilePreview()}
       statusLabel={null}
@@ -474,6 +527,7 @@ export function HostFilePreviewTabContent({
   lineRange,
   markdownLinkRouting,
   onSelectionAddToChat,
+  onMarkdownGrab,
   onOpenInEditor,
   threadId,
 }: HostFilePreviewTabContentProps) {
@@ -511,6 +565,10 @@ export function HostFilePreviewTabContent({
       lineRange={lineRange}
       markdownLinkRouting={resolvedMarkdownLinkRouting}
       onSelectionAddToChat={onSelectionAddToChat}
+      onMarkdownGrab={resolveMarkdownGrabHandler({
+        onMarkdownGrab,
+        onSelectionAddToChat,
+      })}
       onOpenInEditor={onOpenInEditor}
       onRefresh={() => void refetchHostFilePreview()}
       statusLabel={null}
@@ -523,6 +581,7 @@ export function HostScopedFilePreviewTabContent({
   hostId,
   isPanelOpen,
   lineRange,
+  onMarkdownGrab,
   onOpenInEditor,
 }: HostScopedFilePreviewTabContentProps) {
   const {
@@ -532,6 +591,7 @@ export function HostScopedFilePreviewTabContent({
     isLoading,
     refetch,
   } = useHostFilePreview(hostId, activePath, { enabled: isPanelOpen });
+<<<<<<< Updated upstream
   const markdownLinkRouting = useMemo(() => {
     return buildMarkdownLeaseImageRouting({
       path: activePath,
@@ -539,6 +599,31 @@ export function HostScopedFilePreviewTabContent({
       previewUrl: hostFilePreview?.url,
     });
   }, [activePath, hostFilePreview?.url]);
+=======
+  const handleMarkdownGrab = resolveMarkdownGrabHandler({
+    onMarkdownGrab,
+  });
+  const handleSaveMarkdown = useCallback<MarkdownFileSaveHandler>(
+    async ({ path, contents }) => {
+      try {
+        await sdk.files.write({
+          hostId,
+          path,
+          content: contents,
+          contentEncoding: "utf8",
+        });
+        await refetch();
+        appToast.success("Saved");
+      } catch (error) {
+        appToast.error(
+          error instanceof Error ? error.message : "Failed to save file",
+        );
+        throw error;
+      }
+    },
+    [hostId, refetch],
+  );
+>>>>>>> Stashed changes
   return (
     <SecondaryPanelFilePreview
       activePath={activePath}
@@ -549,7 +634,12 @@ export function HostScopedFilePreviewTabContent({
       isLoading={isLoading}
       isRefreshing={isFetching}
       lineRange={lineRange}
+<<<<<<< Updated upstream
       markdownLinkRouting={markdownLinkRouting}
+=======
+      onMarkdownGrab={handleMarkdownGrab}
+      onSaveMarkdown={handleSaveMarkdown}
+>>>>>>> Stashed changes
       onOpenInEditor={onOpenInEditor}
       onRefresh={() => void refetch()}
       statusLabel={null}
@@ -564,6 +654,7 @@ export function ThreadStorageFilePreviewTabContent({
   lineRange,
   markdownLinkRouting,
   onSelectionAddToChat,
+  onMarkdownGrab,
   onOpenInEditor,
   threadId,
 }: ThreadStorageFilePreviewTabContentProps) {
@@ -598,6 +689,10 @@ export function ThreadStorageFilePreviewTabContent({
       lineRange={lineRange}
       markdownLinkRouting={resolvedMarkdownLinkRouting}
       onSelectionAddToChat={onSelectionAddToChat}
+      onMarkdownGrab={resolveMarkdownGrabHandler({
+        onMarkdownGrab,
+        onSelectionAddToChat,
+      })}
       onOpenInEditor={onOpenInEditor}
       onRefresh={() => void refetchThreadStorageFilePreview()}
       threadId={threadId}

@@ -22,6 +22,8 @@ import {
   BB_DESKTOP_BROWSER_SET_VISIBLE_WITHOUT_FOCUS_CHANNEL,
   BB_DESKTOP_BROWSER_STOP_CHANNEL,
   BB_DESKTOP_BROWSER_STOP_FIND_IN_PAGE_CHANNEL,
+  BB_DESKTOP_BROWSER_START_GRAB_CHANNEL,
+  BB_DESKTOP_BROWSER_CANCEL_GRAB_CHANNEL,
 } from "../src/desktop-browser-ipc.js";
 import { registerDesktopBrowserIpc } from "../src/desktop-browser-main-ipc.js";
 import type { DesktopBrowserViewManager } from "../src/desktop-browser-view.js";
@@ -75,6 +77,7 @@ type NavigateCall = Parameters<DesktopBrowserViewManager["navigate"]>[0];
 type SetBoundsCall = Parameters<DesktopBrowserViewManager["setBounds"]>[0];
 type SetVisibleCall = Parameters<DesktopBrowserViewManager["setVisible"]>[0];
 type TabCommandCall = Parameters<DesktopBrowserViewManager["reload"]>[0];
+type StartGrabCall = Parameters<DesktopBrowserViewManager["startGrab"]>[0];
 type WindowResizeCall = Parameters<
   DesktopBrowserViewManager["beginWindowResize"]
 >[0];
@@ -144,6 +147,8 @@ class RecordingDesktopBrowserViewManager implements DesktopBrowserViewManager {
   public readonly setVisibleCalls: SetVisibleCall[] = [];
   public readonly setVisibleWithoutFocusCalls: SetVisibleCall[] = [];
   public readonly stopCalls: TabCommandCall[] = [];
+  public readonly startGrabCalls: StartGrabCall[] = [];
+  public readonly cancelGrabCalls: StartGrabCall[] = [];
 
   attach(args: AttachCall): void {
     this.attachCalls.push(args);
@@ -213,6 +218,14 @@ class RecordingDesktopBrowserViewManager implements DesktopBrowserViewManager {
 
   stop(args: TabCommandCall): void {
     this.stopCalls.push(args);
+  }
+
+  startGrab(args: StartGrabCall): void {
+    this.startGrabCalls.push(args);
+  }
+
+  cancelGrab(args: StartGrabCall): void {
+    this.cancelGrabCalls.push(args);
   }
 }
 
@@ -505,6 +518,41 @@ describe("registerDesktopBrowserIpc", () => {
       { hostWindow: renderer.hostWindow, tabId: "browser:a" },
     ]);
     expect(manager.stopCalls).toEqual([
+      { hostWindow: renderer.hostWindow, tabId: "browser:a" },
+    ]);
+  });
+
+  it("dispatches grab start and cancel only from trusted senders", () => {
+    const manager = new RecordingDesktopBrowserViewManager();
+    registerDesktopBrowserIpc(manager);
+    const renderer = createTrustedRenderer("main-window");
+    const untrustedSender = createUntrustedSender();
+
+    sendBrowserIpc({
+      channel: BB_DESKTOP_BROWSER_START_GRAB_CHANNEL,
+      payload: { tabId: "browser:a" },
+      sender: renderer.sender,
+    });
+    sendBrowserIpc({
+      channel: BB_DESKTOP_BROWSER_START_GRAB_CHANNEL,
+      payload: { tabId: "browser:a" },
+      sender: untrustedSender,
+    });
+    sendBrowserIpc({
+      channel: BB_DESKTOP_BROWSER_CANCEL_GRAB_CHANNEL,
+      payload: { tabId: "browser:a" },
+      sender: renderer.sender,
+    });
+    sendBrowserIpc({
+      channel: BB_DESKTOP_BROWSER_START_GRAB_CHANNEL,
+      payload: { tabId: "" },
+      sender: renderer.sender,
+    });
+
+    expect(manager.startGrabCalls).toEqual([
+      { hostWindow: renderer.hostWindow, tabId: "browser:a" },
+    ]);
+    expect(manager.cancelGrabCalls).toEqual([
       { hostWindow: renderer.hostWindow, tabId: "browser:a" },
     ]);
   });

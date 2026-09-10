@@ -31,14 +31,23 @@ function requireForkSourceThread(
 function requireForkCapableProvider(
   deps: Pick<ThreadForkDeps, "providerRegistry">,
   sourceThread: Thread,
+  visibility: ForkThreadRequest["visibility"],
 ): void {
-  if (!deps.providerRegistry.supportsFork(sourceThread.providerId)) {
-    throw new ApiError(
-      400,
-      "invalid_request",
-      `Provider ${sourceThread.providerId} does not support thread forks`,
-    );
+  if (deps.providerRegistry.supportsFork(sourceThread.providerId)) {
+    return;
   }
+  // Hidden plugin forks (Side Chat) can still open on providers that cannot
+  // clone a session. The child starts a fresh provider session and relies on
+  // the fork seed for context. Visible forks keep requiring a native clone so
+  // the timeline and the agent stay in agreement.
+  if (visibility === "hidden") {
+    return;
+  }
+  throw new ApiError(
+    400,
+    "invalid_request",
+    `Provider ${sourceThread.providerId} does not support thread forks`,
+  );
 }
 
 function requireSourceEnvironment(
@@ -64,7 +73,7 @@ export async function createThreadForkFromRequest(
   request: ForkThreadRequest,
 ) {
   const sourceThread = requireForkSourceThread(deps, request.sourceThreadId);
-  requireForkCapableProvider(deps, sourceThread);
+  requireForkCapableProvider(deps, sourceThread, request.visibility);
   const sourceEnvironment = requireSourceEnvironment(deps, sourceThread);
   const sourceExecution = getLastExecutionOptions(deps, sourceThread.id);
   const visibleInput = request.input ?? [];

@@ -24,16 +24,33 @@ export function isHttpOrHttpsUrl(url: string): boolean {
   return HTTP_URL_SCHEME_PATTERN.test(url);
 }
 
+export function isLocalHtmlFileUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "file:" || parsed.hostname !== "") {
+    return false;
+  }
+  return /\.html?$/iu.test(parsed.pathname);
+}
+
 export function resolveUrlOpenTarget({
   desktopBrowserAvailable,
   openLinksInAppBrowser,
   url,
 }: ResolveUrlOpenTargetArgs): UrlOpenTarget {
-  if (!isHttpOrHttpsUrl(url)) {
+  const localHtmlFile = isLocalHtmlFileUrl(url);
+  if (!isHttpOrHttpsUrl(url) && !localHtmlFile) {
     return "unhandled";
   }
-  if (desktopBrowserAvailable && openLinksInAppBrowser) {
+  if (desktopBrowserAvailable && (openLinksInAppBrowser || localHtmlFile)) {
     return "in-app-browser";
+  }
+  if (localHtmlFile) {
+    return "unhandled";
   }
   return "external-browser";
 }

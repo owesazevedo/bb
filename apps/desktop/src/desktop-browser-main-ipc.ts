@@ -22,6 +22,8 @@ import {
   BB_DESKTOP_BROWSER_SET_VISIBLE_WITHOUT_FOCUS_CHANNEL,
   BB_DESKTOP_BROWSER_STOP_CHANNEL,
   BB_DESKTOP_BROWSER_STOP_FIND_IN_PAGE_CHANNEL,
+  BB_DESKTOP_BROWSER_START_GRAB_CHANNEL,
+  BB_DESKTOP_BROWSER_CANCEL_GRAB_CHANNEL,
 } from "./desktop-browser-ipc.js";
 import type { DesktopBrowserViewManager } from "./desktop-browser-view.js";
 
@@ -183,5 +185,13 @@ export function registerDesktopBrowserIpc(
   registerTabCommand({
     channel: BB_DESKTOP_BROWSER_STOP_CHANNEL,
     run: (args) => manager.stop(args),
+  });
+  registerTabCommand({
+    channel: BB_DESKTOP_BROWSER_START_GRAB_CHANNEL,
+    run: (args) => manager.startGrab(args),
+  });
+  registerTabCommand({
+    channel: BB_DESKTOP_BROWSER_CANCEL_GRAB_CHANNEL,
+    run: (args) => manager.cancelGrab(args),
   });
 }

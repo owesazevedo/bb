@@ -1,8 +1,10 @@
 import {
   FilePreview as FilePreviewSurface,
   type FilePreviewFile,
+  type MarkdownFileSaveHandler,
   type TextFilePreviewKind,
 } from "./FilePreview";
+import type { MarkdownGrabSelectedResult } from "@/lib/markdown-grab-quote";
 import { hashSourceContents } from "@/components/code/source-code-budget";
 import type { MarkdownLinkRouting } from "@/components/ui/markdown-link-routing.js";
 import { HttpError } from "@/lib/api";
@@ -31,6 +33,8 @@ interface FilePreviewBaseProps {
   lineRange?: FilePreviewLineRange | null;
   markdownLinkRouting?: MarkdownLinkRouting;
   onSelectionAddToChat?: (text: string) => void;
+  onMarkdownGrab?: (result: MarkdownGrabSelectedResult) => void;
+  onSaveMarkdown?: MarkdownFileSaveHandler;
   onOpenInEditor?: (path: string) => void;
   onRefresh?: () => void;
 }
@@ -97,6 +101,8 @@ export function SecondaryPanelFilePreview({
   lineRange = null,
   markdownLinkRouting,
   onSelectionAddToChat,
+  onMarkdownGrab,
+  onSaveMarkdown,
   onOpenInEditor,
   onRefresh,
   statusLabel = null,
@@ -108,6 +114,8 @@ export function SecondaryPanelFilePreview({
         path={activePath}
         copyPath={copyPath}
         onSelectionAddToChat={onSelectionAddToChat}
+        onMarkdownGrab={onMarkdownGrab}
+        onSaveMarkdown={onSaveMarkdown}
         onOpenInEditor={onOpenInEditor}
         onRefresh={onRefresh}
         isRefreshing={isRefreshing}
@@ -123,6 +131,8 @@ export function SecondaryPanelFilePreview({
         path={activePath}
         copyPath={copyPath}
         onSelectionAddToChat={onSelectionAddToChat}
+        onMarkdownGrab={onMarkdownGrab}
+        onSaveMarkdown={onSaveMarkdown}
         onOpenInEditor={onOpenInEditor}
         onRefresh={onRefresh}
         isRefreshing={isRefreshing}
@@ -139,6 +149,8 @@ export function SecondaryPanelFilePreview({
           path={activePath}
           copyPath={copyPath}
           onSelectionAddToChat={onSelectionAddToChat}
+          onMarkdownGrab={onMarkdownGrab}
+          onSaveMarkdown={onSaveMarkdown}
           onOpenInEditor={onOpenInEditor}
           onRefresh={onRefresh}
           isRefreshing={isRefreshing}
@@ -158,6 +170,8 @@ export function SecondaryPanelFilePreview({
         path={activePath}
         copyPath={copyPath}
         onSelectionAddToChat={onSelectionAddToChat}
+        onMarkdownGrab={onMarkdownGrab}
+        onSaveMarkdown={onSaveMarkdown}
         onOpenInEditor={onOpenInEditor}
         onRefresh={onRefresh}
         isRefreshing={isRefreshing}
@@ -183,6 +197,8 @@ export function SecondaryPanelFilePreview({
           path={activePath}
           copyPath={copyPath}
           onSelectionAddToChat={onSelectionAddToChat}
+          onMarkdownGrab={onMarkdownGrab}
+          onSaveMarkdown={onSaveMarkdown}
           onOpenInEditor={onOpenInEditor}
           onRefresh={onRefresh}
           isRefreshing={isRefreshing}
@@ -196,6 +212,8 @@ export function SecondaryPanelFilePreview({
         path={activePath}
         copyPath={copyPath}
         onSelectionAddToChat={onSelectionAddToChat}
+        onMarkdownGrab={onMarkdownGrab}
+        onSaveMarkdown={onSaveMarkdown}
         onOpenInEditor={onOpenInEditor}
         onRefresh={onRefresh}
         isRefreshing={isRefreshing}
@@ -217,6 +235,8 @@ export function SecondaryPanelFilePreview({
         path={activePath}
         copyPath={copyPath}
         onSelectionAddToChat={onSelectionAddToChat}
+        onMarkdownGrab={onMarkdownGrab}
+        onSaveMarkdown={onSaveMarkdown}
         onOpenInEditor={onOpenInEditor}
         onRefresh={onRefresh}
         isRefreshing={isRefreshing}
@@ -232,6 +252,8 @@ export function SecondaryPanelFilePreview({
         path={activePath}
         copyPath={copyPath}
         onSelectionAddToChat={onSelectionAddToChat}
+        onMarkdownGrab={onMarkdownGrab}
+        onSaveMarkdown={onSaveMarkdown}
         onOpenInEditor={onOpenInEditor}
         onRefresh={onRefresh}
         isRefreshing={isRefreshing}
@@ -246,6 +268,8 @@ export function SecondaryPanelFilePreview({
       path={activePath}
       copyPath={copyPath}
       onSelectionAddToChat={onSelectionAddToChat}
+      onMarkdownGrab={onMarkdownGrab}
+      onSaveMarkdown={onSaveMarkdown}
       onOpenInEditor={onOpenInEditor}
       onRefresh={onRefresh}
       isRefreshing={isRefreshing}
@@ -268,6 +292,8 @@ export function ThreadStorageFilePreview({
   lineRange,
   markdownLinkRouting,
   onSelectionAddToChat,
+  onMarkdownGrab,
+  onSaveMarkdown,
   onOpenInEditor,
   onRefresh,
   threadId,
@@ -284,6 +310,8 @@ export function ThreadStorageFilePreview({
       lineRange={lineRange}
       markdownLinkRouting={markdownLinkRouting}
       onSelectionAddToChat={onSelectionAddToChat}
+      onMarkdownGrab={onMarkdownGrab}
+      onSaveMarkdown={onSaveMarkdown}
       onOpenInEditor={onOpenInEditor}
       onRefresh={onRefresh}
     />

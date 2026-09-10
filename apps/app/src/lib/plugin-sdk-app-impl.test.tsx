@@ -166,6 +166,86 @@ describe("plugin SDK Markdown", () => {
 });
 
 describe("plugin SDK navigation components", () => {
+  it("opens experimental_openFilePreview in the builtin BB preview panel", () => {
+    const openFilePreview = vi.fn(() => true);
+    function Probe() {
+      const navigate = pluginSdkAppImplementation.useBbNavigate();
+      return (
+        <button
+          type="button"
+          onClick={() =>
+            navigate.experimental_openFilePreview({
+              target: {
+                kind: "host",
+                hostId: "host_1",
+                path: "/md/DESIGN.md",
+              },
+              location: null,
+            })
+          }
+        >
+          Preview
+        </button>
+      );
+    }
+
+    render(
+      <MemoryRouter>
+        <AppNavigationHostProvider capabilities={{ openFilePreview }}>
+          <PluginSlotMount pluginId="demo" slotKind="test" slotId="probe">
+            <Probe />
+          </PluginSlotMount>
+        </AppNavigationHostProvider>
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(openFilePreview).toHaveBeenCalledWith({
+      target: {
+        kind: "host",
+        hostId: "host_1",
+        path: "/md/DESIGN.md",
+      },
+      location: null,
+      viewer: "builtin",
+    });
+  });
+
+  it("does not open a host preview when the path is not absolute", () => {
+    const openFilePreview = vi.fn(() => true);
+    function Probe() {
+      const navigate = pluginSdkAppImplementation.useBbNavigate();
+      return (
+        <button
+          type="button"
+          onClick={() =>
+            navigate.experimental_openFilePreview({
+              target: {
+                kind: "host",
+                hostId: "host_1",
+                path: "md/DESIGN.md",
+              },
+              location: null,
+            })
+          }
+        >
+          Preview
+        </button>
+      );
+    }
+
+    render(
+      <MemoryRouter>
+        <AppNavigationHostProvider capabilities={{ openFilePreview }}>
+          <PluginSlotMount pluginId="demo" slotKind="test" slotId="probe">
+            <Probe />
+          </PluginSlotMount>
+        </AppNavigationHostProvider>
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(openFilePreview).not.toHaveBeenCalled();
+  });
+
   it("exposes the file link through the real runtime", () => {
     const openFilePreview = vi.fn(() => true);
     const FileLink = pluginSdkAppImplementation.experimental_FileLink;

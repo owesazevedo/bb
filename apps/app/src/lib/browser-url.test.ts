@@ -126,6 +126,22 @@ describe("getBrowserUrlSecurity", () => {
     expect(getBrowserUrlSecurity("")).toBe("none");
     expect(getBrowserUrlSecurity("not a url")).toBe("none");
   });
+
+  it("treats loopback HTTP as a local trusted origin", () => {
+    expect(getBrowserUrlSecurity("http://localhost:11003/page")).toBe("secure");
+    expect(getBrowserUrlSecurity("http://127.0.0.1:11003/page")).toBe("secure");
+    expect(
+      getBrowserUrlSecurity("http://preview.localhost:11003/page"),
+    ).toBe("secure");
+    expect(
+      getBrowserUrlSecurity(
+        "bb-preview://preview.localhost:11003/api/v1/file-previews/lease/index.html",
+      ),
+    ).toBe("secure");
+    expect(getBrowserUrlSecurity("file:///Users/me/landing/index.html")).toBe(
+      "secure",
+    );
+  });
 });
 
 describe("getBrowserUrlHost", () => {

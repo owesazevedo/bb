@@ -4,6 +4,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { Node, Slice } from "@tiptap/pm/model";
 import type { PromptTextMention } from "@bb/domain";
 import { PromptMentionExtension } from "./prompt-mention-extension";
+import { promptEditorExtensions } from "./prompt-editor-extensions";
 import {
   promptCommandResourceFromSuggestion,
   promptEditorClipboardTextFromSlice,
@@ -722,5 +723,222 @@ describe("prompt editor serialization", () => {
       },
       { type: "text", text: " " },
     ]);
+  });
+});
+
+describe("prompt editor browser grab payload", () => {
+  const grabSchema = getSchema(
+    promptEditorExtensions({
+      richTextEditing: false,
+      getPlaceholder: () => "",
+    }),
+  );
+
+  function findGrabNodes(node: { type?: string; content?: unknown[] }): unknown[] {
+    const found: unknown[] = [];
+    if (node.type === "browserGrabPayload") {
+      found.push(node);
+    }
+    for (const child of node.content ?? []) {
+      if (child && typeof child === "object") {
+        found.push(...findGrabNodes(child as { type?: string; content?: unknown[] }));
+      }
+    }
+    return found;
+  }
+
+  function collectText(node: { text?: string; content?: unknown[] }): string {
+    if (typeof node.text === "string") {
+      return node.text;
+    }
+    return (node.content ?? [])
+      .map((child) =>
+        child && typeof child === "object"
+          ? collectText(child as { text?: string; content?: unknown[] })
+          : "",
+      )
+      .join("");
+  }
+
+  it("parses a chip token plus hidden payload as an inline grab node", () => {
+    const value: PromptEditorValue = {
+      text: [
+        "@el:button",
+        "<!-- bb-browser-grab",
+        "Tag: button",
+        "Selector: #cta",
+        "HTML:",
+        '<button id="cta">Buy</button>',
+        "-->",
+      ].join("\n"),
+      mentions: [],
+    };
+
+    const json = promptEditorContentFromValue(value);
+    const grabs = findGrabNodes(json);
+    expect(grabs).toHaveLength(1);
+    const grab = grabs[0] as {
+      attrs?: { payload?: string; tagName?: string };
+    };
+    expect(grab.attrs?.tagName).toBe("button");
+    expect(grab.attrs?.payload).toContain('<button id="cta">Buy</button>');
+    expect(collectText(json)).not.toContain('<button id="cta">Buy</button>');
+    expect(collectText(json)).not.toContain("@el:button");
+
+    const restored = promptEditorValueFromDoc(Node.fromJSON(grabSchema, json));
+    expect(restored.text).toContain("@el:button");
+    expect(restored.text).toContain("<!-- bb-browser-grab");
+    expect(restored.text).toContain('<button id="cta">Buy</button>');
+    expect(restored.text).not.toContain("Browser ·");
+  });
+
+  it("upgrades a legacy quoted chip line into an inline grab node", () => {
+    const value: PromptEditorValue = {
+      text: [
+        "> Browser · `#cta` · example.com/pricing",
+        "",
+        "<!-- bb-browser-grab",
+        "Tag: button",
+        "Selector: #cta",
+        "HTML:",
+        '<button id="cta">Buy</button>',
+        "-->",
+      ].join("\n"),
+      mentions: [],
+    };
+
+    const json = promptEditorContentFromValue(value);
+    const grabs = findGrabNodes(json);
+    expect(grabs).toHaveLength(1);
+    expect((grabs[0] as { attrs?: { tagName?: string } }).attrs?.tagName).toBe(
+      "button",
+    );
+
+    const restored = promptEditorValueFromDoc(Node.fromJSON(grabSchema, json));
+    expect(restored.text).toContain("@el:button");
+    expect(restored.text).toContain("<!-- bb-browser-grab");
+    expect(restored.text).toContain('<button id="cta">Buy</button>');
+    expect(restored.text).not.toMatch(/^> Browser · /m);
+  });
+
+  it("copies a grab chip as the compact token plus hidden payload", () => {
+    const json = promptEditorContentFromValue({
+      text: [
+        "@el:button",
+        "<!-- bb-browser-grab",
+        "Tag: button",
+        "HTML:",
+        '<button id="cta">Buy</button>',
+        "-->",
+      ].join("\n"),
+      mentions: [],
+    });
+    const doc = Node.fromJSON(grabSchema, json);
+    const copied = promptEditorClipboardTextFromSlice(
+      new Slice(doc.content, 0, 0),
+      grabSchema,
+    );
+    expect(copied).toContain("@el:button");
+    expect(copied).toContain("<!-- bb-browser-grab");
+    expect(copied).toContain('<button id="cta">Buy</button>');
+    expect(copied).not.toContain("Browser ·");
+  });
+});
+
+describe("prompt editor markdown grab payload", () => {
+  const grabSchema = getSchema(
+    promptEditorExtensions({
+      richTextEditing: false,
+      getPlaceholder: () => "",
+    }),
+  );
+
+  function findMarkdownGrabNodes(node: {
+    type?: string;
+    content?: unknown[];
+  }): unknown[] {
+    const found: unknown[] = [];
+    if (node.type === "markdownGrabPayload" || node.type === "browserGrabPayload") {
+      found.push(node);
+    }
+    for (const child of node.content ?? []) {
+      if (child && typeof child === "object") {
+        found.push(
+          ...findMarkdownGrabNodes(
+            child as { type?: string; content?: unknown[] },
+          ),
+        );
+      }
+    }
+    return found;
+  }
+
+  function collectText(node: { text?: string; content?: unknown[] }): string {
+    if (typeof node.text === "string") {
+      return node.text;
+    }
+    return (node.content ?? [])
+      .map((child) =>
+        child && typeof child === "object"
+          ? collectText(child as { text?: string; content?: unknown[] })
+          : "",
+      )
+      .join("");
+  }
+
+  it("parses a chip token plus hidden payload as an inline markdown grab node", () => {
+    const value: PromptEditorValue = {
+      text: [
+        "@md:Release-Plan",
+        "<!-- bb-markdown-grab",
+        "Path: notes/Release Plan.md",
+        "File: Release Plan.md",
+        "Text:",
+        "Ship the chip.",
+        "-->",
+      ].join("\n"),
+      mentions: [],
+    };
+
+    const json = promptEditorContentFromValue(value);
+    const grabs = findMarkdownGrabNodes(json).filter(
+      (node) => (node as { type?: string }).type === "markdownGrabPayload",
+    );
+    expect(grabs).toHaveLength(1);
+    const grab = grabs[0] as {
+      attrs?: { payload?: string; tagName?: string };
+    };
+    expect(grab.attrs?.tagName).toBe("Release-Plan");
+    expect(grab.attrs?.payload).toContain("Ship the chip.");
+    expect(collectText(json)).not.toContain("Ship the chip.");
+    expect(collectText(json)).not.toContain("@md:Release-Plan");
+
+    const restored = promptEditorValueFromDoc(Node.fromJSON(grabSchema, json));
+    expect(restored.text).toContain("@md:Release-Plan");
+    expect(restored.text).toContain("<!-- bb-markdown-grab");
+    expect(restored.text).toContain("Ship the chip.");
+  });
+
+  it("copies a markdown grab chip as the compact token plus hidden payload", () => {
+    const json = promptEditorContentFromValue({
+      text: [
+        "@md:Release-Plan",
+        "<!-- bb-markdown-grab",
+        "Path: notes/Release Plan.md",
+        "File: Release Plan.md",
+        "Text:",
+        "Ship the chip.",
+        "-->",
+      ].join("\n"),
+      mentions: [],
+    });
+    const doc = Node.fromJSON(grabSchema, json);
+    const copied = promptEditorClipboardTextFromSlice(
+      new Slice(doc.content, 0, 0),
+      grabSchema,
+    );
+    expect(copied).toContain("@md:Release-Plan");
+    expect(copied).toContain("<!-- bb-markdown-grab");
+    expect(copied).toContain("Ship the chip.");
   });
 });

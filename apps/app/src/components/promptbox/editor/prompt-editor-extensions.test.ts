@@ -32,12 +32,16 @@ describe("promptEditorExtensions", () => {
     }
   });
 
-  it("keeps paragraph, blockquote, and mention available in both modes", () => {
+  it("keeps paragraph, blockquote, mention, and inline grab payload available in both modes", () => {
     for (const richTextEditing of [true, false]) {
       const schema = schemaFor(richTextEditing);
       expect(schema.nodes.paragraph).toBeDefined();
       expect(schema.nodes.blockquote).toBeDefined();
       expect(schema.nodes.mention).toBeDefined();
+      expect(schema.nodes.browserGrabPayload).toBeDefined();
+      expect(schema.nodes.browserGrabPayload?.spec.inline).toBe(true);
+      expect(schema.nodes.markdownGrabPayload).toBeDefined();
+      expect(schema.nodes.markdownGrabPayload?.spec.inline).toBe(true);
     }
   });
 

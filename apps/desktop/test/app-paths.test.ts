@@ -47,7 +47,7 @@ describe("desktop app paths", () => {
     );
   });
 
-  it("keeps the development icon independent of the release channel", () => {
+  it("uses the stable white icon in unpackaged development builds", () => {
     const paths: DesktopPathContext = {
       appPath: "/checkout/apps/desktop",
       isPackaged: false,
@@ -59,6 +59,6 @@ describe("desktop app paths", () => {
         packagedIconFileName: "icon-nightly.png",
         paths,
       }),
-    ).toBe("/checkout/apps/desktop/assets/icon-dev.png");
+    ).toBe("/checkout/apps/desktop/assets/icon.png");
   });
 });

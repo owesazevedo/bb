@@ -84,6 +84,9 @@ interface ResolveDesktopUpdateSupportArgs {
 export function resolveDesktopUpdateSupport(
   args: ResolveDesktopUpdateSupportArgs,
 ): DesktopUpdateSupport {
+  if (args.env.BB_DESKTOP_FORK_ISOLATION === "1") {
+    return { autoUpdate: false, versionCheck: false };
+  }
   if (args.platform === "macos") {
     return { autoUpdate: true, versionCheck: true };
   }

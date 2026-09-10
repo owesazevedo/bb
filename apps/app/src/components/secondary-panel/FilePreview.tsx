@@ -1,6 +1,7 @@
 import { SourceLoadingSkeleton } from "@/components/code/code-loading-skeletons";
 import {
   type CSSProperties,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -9,6 +10,11 @@ import {
 import type { UrlTransform } from "react-markdown";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Button } from "@bb/shared-ui/button";
+import {
+  isFilePreviewHostname,
+  isPrivilegedFilePreviewUrl,
+  rewriteToFilePreviewOrigin,
+} from "@bb/config/file-preview-origin";
 import { SourceCodeHost } from "@/components/code/SourceCodeHost";
 import { COARSE_POINTER_TEXT_SM_CLASS } from "@bb/shared-ui/coarse-pointer-sizing";
 import { EmptyStatePanel } from "@bb/shared-ui/empty-state";
@@ -39,6 +45,9 @@ import {
   type CodeOverflowModeChangeHandler,
 } from "@/lib/code-overflow-mode";
 import { cn } from "@bb/shared-ui/lib/utils";
+import {
+  type MarkdownGrabSelectedResult,
+} from "@/lib/markdown-grab-quote";
 import { SecondaryPanelSelectionActions } from "./SecondaryPanelSelectionActions.js";
 
 export interface FilePreviewFile {
@@ -77,12 +86,19 @@ type FilePreviewState =
       markdownUrlTransform?: UrlTransform;
     };
 
+export type MarkdownFileSaveHandler = (args: {
+  path: string;
+  contents: string;
+}) => Promise<void> | void;
+
 interface FilePreviewProps {
   state: FilePreviewState;
   path: string;
   copyPath?: string | null;
   headerMode?: FilePreviewHeaderMode;
   onSelectionAddToChat?: (text: string) => void;
+  onMarkdownGrab?: (result: MarkdownGrabSelectedResult) => void;
+  onSaveMarkdown?: MarkdownFileSaveHandler;
   onOpenInEditor?: (path: string) => void;
   onRefresh?: () => void;
   isRefreshing?: boolean;
@@ -97,6 +113,8 @@ interface FilePreviewBodyProps {
   viewMode: FilePreviewViewMode;
   markdownLinkRouting?: MarkdownLinkRouting;
   onSelectionAddToChat?: (text: string) => void;
+  editDraft: string;
+  onEditDraftChange: (value: string) => void;
 }
 
 interface HtmlFilePreviewBodyProps {
@@ -121,6 +139,10 @@ interface FilePreviewHeaderProps {
   onLineOverflowModeChange: CodeOverflowModeChangeHandler;
   viewMode: FilePreviewViewMode;
   onViewModeChange: (mode: FilePreviewViewMode) => void;
+  showEditToggle: boolean;
+  canSaveEdit: boolean;
+  isSavingEdit: boolean;
+  onSaveEdit?: () => void;
 }
 
 interface FilePreviewLineWrapButtonProps {
@@ -139,6 +161,11 @@ interface MarkdownFilePreviewProps {
   onSelectionAddToChat?: (text: string) => void;
   urlTransform?: UrlTransform;
   markdownLinkRouting?: MarkdownLinkRouting;
+}
+
+interface MarkdownFileEditorProps {
+  value: string;
+  onChange: (value: string) => void;
 }
 
 interface CsvFilePreviewProps {
@@ -181,7 +208,7 @@ interface CsvPreviewData {
   truncatedRows: boolean;
 }
 
-type FilePreviewViewMode = "preview" | "source";
+type FilePreviewViewMode = "preview" | "edit" | "source";
 export type TextFilePreviewKind = "csv" | "markdown";
 type FilePreviewToggleKind = "csv" | "html" | "markdown";
 type FilePreviewHeaderMode = "file" | "none";
@@ -221,7 +248,31 @@ function toAbsolutePreviewUrl(url: string): string {
   if (typeof window === "undefined") {
     return url;
   }
-  return new URL(url, window.location.href).toString();
+  return rewriteToFilePreviewOrigin(url, window.location.href, {
+    privilegedScheme: window.bbDesktop !== undefined,
+  });
+}
+
+function htmlPreviewFrameUrl(url: string): string {
+  return toAbsolutePreviewUrl(url);
+}
+
+function htmlPreviewFrameSandbox(
+  url: string,
+  sandbox: IframePreviewSandbox | null,
+): IframePreviewSandbox | null {
+  if (typeof window === "undefined") {
+    return sandbox;
+  }
+  try {
+    const parsed = new URL(htmlPreviewFrameUrl(url));
+    if (isFilePreviewHostname(parsed.hostname) || isPrivilegedFilePreviewUrl(parsed.href)) {
+      return null;
+    }
+  } catch {
+    return sandbox;
+  }
+  return sandbox;
 }
 
 function getFilePreviewToggleKind(
@@ -294,10 +345,18 @@ function getInitialFilePreviewViewMode({
   return lineRange === null ? "preview" : "source";
 }
 
+function fileNameFromPreviewPath(path: string): string {
+  const parts = path.split(/[\\/]/u);
+  return parts[parts.length - 1] || path;
+}
+
 function usesCodeViewLayout(
   state: FilePreviewState,
   viewMode: FilePreviewViewMode,
 ): boolean {
+  if (viewMode === "edit") {
+    return false;
+  }
   if (state.kind === "html") {
     return viewMode === "source";
   }
@@ -426,6 +485,8 @@ export function FilePreview({
   copyPath = null,
   headerMode = "file",
   onSelectionAddToChat,
+  onMarkdownGrab,
+  onSaveMarkdown,
   onOpenInEditor,
   onRefresh,
   isRefreshing = false,
@@ -445,6 +506,12 @@ export function FilePreview({
   const [lineOverflowMode, setLineOverflowMode] = useState<CodeOverflowMode>(
     DEFAULT_CODE_OVERFLOW_MODE,
   );
+  const [editDraft, setEditDraft] = useState(rawContents ?? "");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const lastFileContentsRef = useRef(rawContents ?? "");
+  const showEditToggle =
+    toggleKind === "markdown" &&
+    (onSaveMarkdown !== undefined || viewMode === "edit");
   useEffect(() => {
     setViewMode(
       getInitialFilePreviewViewMode({
@@ -452,7 +519,17 @@ export function FilePreview({
         toggleKind,
       }),
     );
+    setEditDraft(rawContents ?? "");
+    lastFileContentsRef.current = rawContents ?? "";
   }, [filePreviewLineRange, path, toggleKind]);
+
+  useEffect(() => {
+    const contents = rawContents ?? "";
+    setEditDraft((current) =>
+      current === lastFileContentsRef.current ? contents : current,
+    );
+    lastFileContentsRef.current = contents;
+  }, [rawContents]);
 
   const usesIframeLayout =
     state.kind === "iframe" ||
@@ -465,13 +542,57 @@ export function FilePreview({
     state.kind === "ready" &&
     state.textPreviewKind === "markdown" &&
     bodyViewMode === "preview";
+  const usesMarkdownEditLayout =
+    state.kind === "ready" &&
+    state.textPreviewKind === "markdown" &&
+    bodyViewMode === "edit";
   const usesCsvPreviewLayout =
     state.kind === "ready" &&
     state.textPreviewKind === "csv" &&
     bodyViewMode === "preview";
   const usesFullHeightLayout =
-    usesIframeLayout || usesCsvPreviewLayout || usesCodeLayout;
+    usesIframeLayout ||
+    usesCsvPreviewLayout ||
+    usesCodeLayout ||
+    usesMarkdownEditLayout;
   const usesContentHeightLayout = usesMarkdownPreviewLayout;
+  const handleSelectionAddToChat = useCallback(
+    (text: string) => {
+      if (bodyViewMode === "edit") {
+        return;
+      }
+      if (
+        onMarkdownGrab &&
+        state.kind === "ready" &&
+        state.textPreviewKind === "markdown"
+      ) {
+        onMarkdownGrab({
+          path,
+          fileName: fileNameFromPreviewPath(path) || state.file.name,
+          text,
+          contents: state.file.contents,
+        });
+        return;
+      }
+      onSelectionAddToChat?.(text);
+    },
+    [bodyViewMode, onMarkdownGrab, onSelectionAddToChat, path, state],
+  );
+  const handleSaveEdit = useCallback(() => {
+    if (onSaveMarkdown === undefined || isSavingEdit) {
+      return;
+    }
+    const contents = rawContents ?? "";
+    if (editDraft === contents) {
+      return;
+    }
+    setIsSavingEdit(true);
+    void Promise.resolve(onSaveMarkdown({ path, contents: editDraft })).finally(
+      () => {
+        setIsSavingEdit(false);
+      },
+    );
+  }, [editDraft, isSavingEdit, onSaveMarkdown, path, rawContents]);
 
   return (
     <div
@@ -500,6 +621,14 @@ export function FilePreview({
           onLineOverflowModeChange={setLineOverflowMode}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
+          showEditToggle={showEditToggle}
+          canSaveEdit={
+            onSaveMarkdown !== undefined &&
+            !isSavingEdit &&
+            editDraft !== (rawContents ?? "")
+          }
+          isSavingEdit={isSavingEdit}
+          onSaveEdit={onSaveMarkdown === undefined ? undefined : handleSaveEdit}
         />
       ) : null}
       <FilePreviewBody
@@ -508,7 +637,11 @@ export function FilePreview({
         lineOverflowMode={lineOverflowMode}
         viewMode={bodyViewMode}
         markdownLinkRouting={markdownLinkRouting}
-        onSelectionAddToChat={onSelectionAddToChat}
+        onSelectionAddToChat={
+          bodyViewMode === "edit" ? undefined : handleSelectionAddToChat
+        }
+        editDraft={editDraft}
+        onEditDraftChange={setEditDraft}
       />
     </div>
   );
@@ -521,6 +654,8 @@ function FilePreviewBody({
   viewMode,
   markdownLinkRouting,
   onSelectionAddToChat,
+  editDraft,
+  onEditDraftChange,
 }: FilePreviewBodyProps) {
   if (state.kind === "loading") {
     return <SourceLoadingSkeleton />;
@@ -582,6 +717,11 @@ function FilePreviewBody({
       />
     );
   }
+  if (state.textPreviewKind === "markdown" && viewMode === "edit") {
+    return (
+      <MarkdownFileEditor value={editDraft} onChange={onEditDraftChange} />
+    );
+  }
   return (
     <FilePreviewCode
       file={state.file}
@@ -608,6 +748,10 @@ function FilePreviewHeader({
   onLineOverflowModeChange,
   viewMode,
   onViewModeChange,
+  showEditToggle,
+  canSaveEdit,
+  isSavingEdit,
+  onSaveEdit,
 }: FilePreviewHeaderProps) {
   const openShortcut = useAppCommandShortcut("workspace.openPreferred");
   const showHeaderControls = showLineOverflowToggle || toggleKind !== null;
@@ -740,38 +884,70 @@ function FilePreviewHeader({
               onLineOverflowModeChange={onLineOverflowModeChange}
             />
             {toggleKind !== null ? (
-              <div
-                className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border p-0.5"
-                role="tablist"
-                aria-label={getToggleAriaLabel(toggleKind)}
-              >
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    FILE_PREVIEW_VIEW_MODE_BUTTON_CLASS,
-                    COARSE_POINTER_TEXT_SM_CLASS,
-                  )}
-                  onClick={() => onViewModeChange("preview")}
-                  aria-pressed={viewMode === "preview"}
+              <>
+                <div
+                  className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border p-0.5"
+                  role="tablist"
+                  aria-label={getToggleAriaLabel(toggleKind)}
                 >
-                  Preview
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    FILE_PREVIEW_VIEW_MODE_BUTTON_CLASS,
-                    COARSE_POINTER_TEXT_SM_CLASS,
-                  )}
-                  onClick={() => onViewModeChange("source")}
-                  aria-pressed={viewMode === "source"}
-                >
-                  Raw
-                </Button>
-              </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      FILE_PREVIEW_VIEW_MODE_BUTTON_CLASS,
+                      COARSE_POINTER_TEXT_SM_CLASS,
+                    )}
+                    onClick={() => onViewModeChange("preview")}
+                    aria-pressed={viewMode === "preview"}
+                  >
+                    Preview
+                  </Button>
+                  {showEditToggle ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        FILE_PREVIEW_VIEW_MODE_BUTTON_CLASS,
+                        COARSE_POINTER_TEXT_SM_CLASS,
+                      )}
+                      onClick={() => onViewModeChange("edit")}
+                      aria-pressed={viewMode === "edit"}
+                    >
+                      Edit
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      FILE_PREVIEW_VIEW_MODE_BUTTON_CLASS,
+                      COARSE_POINTER_TEXT_SM_CLASS,
+                    )}
+                    onClick={() => onViewModeChange("source")}
+                    aria-pressed={viewMode === "source"}
+                  >
+                    Raw
+                  </Button>
+                </div>
+                {showEditToggle && onSaveEdit !== undefined ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      FILE_PREVIEW_VIEW_MODE_BUTTON_CLASS,
+                      COARSE_POINTER_TEXT_SM_CLASS,
+                    )}
+                    onClick={onSaveEdit}
+                    disabled={!canSaveEdit || isSavingEdit}
+                  >
+                    Save
+                  </Button>
+                ) : null}
+              </>
             ) : null}
           </div>
         ) : null}
@@ -902,12 +1078,26 @@ function MarkdownFilePreview({
       <div className="flex-auto bg-background px-4 py-4">
         <MarkdownPreview
           allowHtml
+          className="bb-md-note"
           content={file.contents}
           urlTransform={urlTransform}
           linkRouting={markdownLinkRouting}
+          variant="document"
         />
       </div>
     </SecondaryPanelSelectionActions>
+  );
+}
+
+function MarkdownFileEditor({ value, onChange }: MarkdownFileEditorProps) {
+  return (
+    <textarea
+      aria-label="Edit markdown"
+      className="min-h-0 w-full flex-1 resize-none bg-background px-4 py-4 font-mono text-sm leading-relaxed text-foreground outline-none"
+      onChange={(event) => onChange(event.target.value)}
+      spellCheck={false}
+      value={value}
+    />
   );
 }
 
@@ -1080,10 +1270,12 @@ function FilePreviewVideo({ url, title }: FilePreviewVideoProps) {
 function IframeFilePreview({ sandbox, title, url }: IframeFilePreviewTarget) {
   const [loadState, setLoadState] = useState<IframeLoadState>("loading");
   const [showLoadingIndicator, setShowLoadingIndicator] = useState(false);
+  const frameUrl = htmlPreviewFrameUrl(url);
+  const frameSandbox = htmlPreviewFrameSandbox(url, sandbox);
 
   useEffect(() => {
     setLoadState("loading");
-  }, [url]);
+  }, [frameUrl]);
 
   useEffect(() => {
     if (loadState !== "loading") {
@@ -1099,7 +1291,7 @@ function IframeFilePreview({ sandbox, title, url }: IframeFilePreviewTarget) {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [loadState, url]);
+  }, [loadState, frameUrl]);
 
   if (loadState === "error") {
     return (
@@ -1121,8 +1313,8 @@ function IframeFilePreview({ sandbox, title, url }: IframeFilePreviewTarget) {
       ) : null}
       <iframe
         title={title}
-        src={url}
-        sandbox={sandbox === null ? undefined : sandbox}
+        src={frameUrl}
+        sandbox={frameSandbox === null ? undefined : frameSandbox}
         style={HTML_FILE_PREVIEW_IFRAME_STYLE}
         onLoad={() => setLoadState("loaded")}
         onError={() => setLoadState("error")}

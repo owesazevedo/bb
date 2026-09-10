@@ -270,6 +270,79 @@ export type BbDesktopBrowserFocusHandler = (tabId: string) => void;
 export type BbDesktopBrowserFindResultHandler = (
   result: BbDesktopBrowserFindResult,
 ) => void;
+
+export const BB_DESKTOP_BROWSER_MAX_GRAB_HTML_LENGTH = 4_096;
+export const BB_DESKTOP_BROWSER_MAX_GRAB_SELECTOR_LENGTH = 512;
+export const BB_DESKTOP_BROWSER_MAX_GRAB_CSS_VALUE_LENGTH = 256;
+export const BB_DESKTOP_BROWSER_GRAB_CSS_KEYS = [
+  "display",
+  "position",
+  "color",
+  "backgroundColor",
+  "fontFamily",
+  "fontSize",
+  "fontWeight",
+  "lineHeight",
+  "padding",
+  "margin",
+  "border",
+  "borderRadius",
+  "width",
+  "height",
+] as const;
+export type BbDesktopBrowserGrabCssKey =
+  (typeof BB_DESKTOP_BROWSER_GRAB_CSS_KEYS)[number];
+
+const bbDesktopBrowserGrabRectSchema = z
+  .object({
+    x: z.number().finite(),
+    y: z.number().finite(),
+    width: z.number().finite().nonnegative(),
+    height: z.number().finite().nonnegative(),
+  })
+  .strict();
+export type BbDesktopBrowserGrabRect = z.infer<
+  typeof bbDesktopBrowserGrabRectSchema
+>;
+
+const bbDesktopBrowserGrabCssSchema = z.record(
+  z.string().max(64),
+  z.string().max(BB_DESKTOP_BROWSER_MAX_GRAB_CSS_VALUE_LENGTH),
+);
+
+export const bbDesktopBrowserGrabResultSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("cancelled"),
+      tabId: z.string().min(1),
+      reason: z.enum(["user", "navigation", "replaced"]),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("selected"),
+      tabId: z.string().min(1),
+      url: z.string().max(BB_DESKTOP_BROWSER_MAX_URL_LENGTH),
+      title: z.string().max(BB_DESKTOP_BROWSER_MAX_TITLE_LENGTH).nullable(),
+      tagName: z.string().min(1).max(64),
+      selector: z.string().max(BB_DESKTOP_BROWSER_MAX_GRAB_SELECTOR_LENGTH),
+      html: z.string().max(BB_DESKTOP_BROWSER_MAX_GRAB_HTML_LENGTH),
+      css: bbDesktopBrowserGrabCssSchema,
+      rect: bbDesktopBrowserGrabRectSchema,
+      screenshotDataUrl: z
+        .string()
+        .max(BB_DESKTOP_BROWSER_MAX_SNAPSHOT_DATA_URL_LENGTH)
+        .nullable(),
+    })
+    .strict(),
+]);
+export type BbDesktopBrowserGrabResult = z.infer<
+  typeof bbDesktopBrowserGrabResultSchema
+>;
+
+export type BbDesktopBrowserGrabResultHandler = (
+  result: BbDesktopBrowserGrabResult,
+) => void;
 export type BbDesktopBrowserUnsubscribe = () => void;
 
 export const bbDesktopBrowserImportCookiesRequestSchema =
@@ -325,5 +398,10 @@ export interface BbDesktopBrowserApi {
   stopFindInPage?(request: BbDesktopBrowserStopFindInPageRequest): void;
   onFindResult?(
     listener: BbDesktopBrowserFindResultHandler,
+  ): BbDesktopBrowserUnsubscribe;
+  startGrab?(tabId: string): void;
+  cancelGrab?(tabId: string): void;
+  onGrabResult?(
+    listener: BbDesktopBrowserGrabResultHandler,
   ): BbDesktopBrowserUnsubscribe;
 }

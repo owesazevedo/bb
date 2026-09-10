@@ -584,6 +584,22 @@ function FileIntentButtons() {
         onClick={() =>
           navigation.openFilePreview({
             target: {
+              kind: "host",
+              hostId: "host-explicit",
+              path: "/tmp/readme.md",
+            },
+            location: null,
+            viewer: "builtin",
+          })
+        }
+      >
+        Open builtin host preview
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          navigation.openFilePreview({
+            target: {
               kind: "thread-storage",
               threadId: "thr-explicit",
               path: "reports/result.md",
@@ -1050,6 +1066,13 @@ describe("PluginPanelRightPanelHost", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open host file" }));
     expect(
       await screen.findByText("host:host-explicit:/tmp/example.log"),
+    ).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open builtin host preview" }),
+    );
+    expect(
+      await screen.findByText("host:host-explicit:/tmp/readme.md"),
     ).toBeTruthy();
     expect(
       screen.getByTestId("host-scoped-file-preview").dataset.panelOpen,

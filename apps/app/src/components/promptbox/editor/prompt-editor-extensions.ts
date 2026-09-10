@@ -5,6 +5,8 @@ import {
   PromptDecorationExtension,
   type PromptDecorationExtensionOptions,
 } from "./prompt-decoration-extension";
+import { PromptBrowserGrabPayloadExtension } from "./prompt-browser-grab-payload-extension";
+import { PromptMarkdownGrabPayloadExtension } from "./prompt-markdown-grab-payload-extension";
 import { PromptMentionExtension } from "./prompt-mention-extension";
 
 interface PromptEditorExtensionsOptions extends PromptDecorationExtensionOptions {
@@ -42,6 +44,8 @@ export function promptEditorExtensions({
       placeholder: () => getPlaceholder(),
     }),
     PromptMentionExtension,
+    PromptBrowserGrabPayloadExtension,
+    PromptMarkdownGrabPayloadExtension,
     PromptDecorationExtension.configure({
       ...(getDecorationSources !== undefined ? { getDecorationSources } : {}),
       ...(getDraftObservers !== undefined ? { getDraftObservers } : {}),

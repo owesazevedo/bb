@@ -17,6 +17,7 @@ import {
   type BbDesktopBrowserAttachRequest,
   type BbDesktopBrowserFindInPageRequest,
   type BbDesktopBrowserFindResult,
+  type BbDesktopBrowserGrabResult,
   type BbDesktopBrowserNavigateRequest,
   type BbDesktopBrowserOpenTabRequest,
   type BbDesktopBrowserScopedOpenTabRequest,
@@ -34,6 +35,7 @@ import {
 import type { AppCommandId, AppShortcutInput } from "@bb/domain";
 import {
   BB_DESKTOP_BROWSER_FIND_RESULT_CHANNEL,
+  BB_DESKTOP_BROWSER_GRAB_RESULT_CHANNEL,
   BB_DESKTOP_BROWSER_OPEN_TAB_CHANNEL,
   BB_DESKTOP_BROWSER_FOCUSED_CHANNEL,
   BB_DESKTOP_BROWSER_SCOPED_OPEN_TAB_CHANNEL,
@@ -44,6 +46,19 @@ import {
   evaluatePopupRate,
   isAllowedBrowserUrl,
 } from "./desktop-browser-policy.js";
+import {
+  BB_BROWSER_GRAB_AWAIT_SCRIPT,
+  BB_BROWSER_GRAB_CANCEL_SCRIPT,
+  BB_BROWSER_GRAB_ISOLATED_WORLD_ID,
+} from "./desktop-browser-grab-guest-script.js";
+import {
+  clampBrowserGrabGuestSelection,
+  isBrowserGrabCancellationPayload,
+  truncateBrowserGrabPageMeta,
+} from "./desktop-browser-grab-payload.js";
+import { cropGrabScreenshotToDataUrl } from "./desktop-browser-grab-screenshot.js";
+import { installFilePreviewProtocolHandler } from "./file-preview-protocol.js";
+import { isPrivilegedFilePreviewUrl } from "@bb/config/file-preview-origin";
 
 const POPUP_RATE_WINDOW_MS = 10_000;
 const POPUP_RATE_MAX_IN_WINDOW = 3;
@@ -176,6 +191,10 @@ interface BrowserViewEntry {
   suppressNextFocusNotification: boolean;
   visible: boolean;
   activeFindRequestId: number | null;
+  grabOp: {
+    abort: () => void;
+    reason: "user" | "navigation" | "replaced";
+  } | null;
 }
 
 export type DesktopBrowserHostWebContentsPayload =
@@ -186,7 +205,8 @@ export type DesktopBrowserHostWebContentsPayload =
   | BbDesktopBrowserScopedOpenTabRequest
   | BbDesktopBrowserSnapshot
   | BbDesktopBrowserTabRef
-  | BbDesktopBrowserFindResult;
+  | BbDesktopBrowserFindResult
+  | BbDesktopBrowserGrabResult;
 
 export interface DesktopBrowserHostContentBounds {
   height: number;
@@ -298,6 +318,8 @@ export interface DesktopBrowserViewManager {
   stopFindInPage(
     args: HostScopedRequestArgs<BbDesktopBrowserStopFindInPageRequest>,
   ): void;
+  startGrab(args: HostScopedTabArgs): void;
+  cancelGrab(args: HostScopedTabArgs): void;
   beginWindowResize(hostWindow: DesktopBrowserHostWindow): void;
   endWindowResize(hostWindow: DesktopBrowserHostWindow): void;
   prepareWindowReload(hostWindow: DesktopBrowserHostWindow): void;
@@ -321,6 +343,19 @@ function send(
     return;
   }
   hostWindow.webContents.send(channel, payload);
+}
+
+async function evaluateBrowserGrabScript(
+  webContents: WebContents,
+  code: string,
+): Promise<unknown> {
+  if (typeof webContents.executeJavaScriptInIsolatedWorld === "function") {
+    return webContents.executeJavaScriptInIsolatedWorld(
+      BB_BROWSER_GRAB_ISOLATED_WORLD_ID,
+      [{ code }],
+    );
+  }
+  return webContents.executeJavaScript(code, true);
 }
 
 function hostWindowViewportBounds(
@@ -375,8 +410,36 @@ function buildBrowserState(
   };
 }
 
-export function isAllowedBrowserPermission(permission: string): boolean {
-  return permission === "clipboard-sanitized-write";
+const FILE_PREVIEW_EXTRA_PERMISSIONS = new Set([
+  "fullscreen",
+  "pointerLock",
+  "storage-access",
+  "top-level-storage-access",
+  "persistent-storage",
+]);
+
+function webContentsUrl(webContents: { getURL?: () => string } | null): string {
+  if (webContents === null || typeof webContents.getURL !== "function") {
+    return "";
+  }
+  try {
+    return webContents.getURL();
+  } catch {
+    return "";
+  }
+}
+
+export function isAllowedBrowserPermission(
+  permission: string,
+  pageUrl = "",
+): boolean {
+  if (permission === "clipboard-sanitized-write") {
+    return true;
+  }
+  return (
+    isPrivilegedFilePreviewUrl(pageUrl) &&
+    FILE_PREVIEW_EXTRA_PERMISSIONS.has(permission)
+  );
 }
 
 export function createDesktopBrowserViewManager(
@@ -503,12 +566,19 @@ export function createDesktopBrowserViewManager(
     if (existing !== undefined) {
       return existing;
     }
+<<<<<<< Updated upstream
     const browserSession = session.fromPartition(tabPartition);
     browserSession.setPermissionRequestHandler((_wc, permission, callback) => {
       callback(isAllowedBrowserPermission(permission));
+=======
+    const browserSession = session.fromPartition(partition);
+    installFilePreviewProtocolHandler(browserSession);
+    browserSession.setPermissionRequestHandler((wc, permission, callback) => {
+      callback(isAllowedBrowserPermission(permission, webContentsUrl(wc)));
+>>>>>>> Stashed changes
     });
-    browserSession.setPermissionCheckHandler((_wc, permission) =>
-      isAllowedBrowserPermission(permission),
+    browserSession.setPermissionCheckHandler((wc, permission) =>
+      isAllowedBrowserPermission(permission, webContentsUrl(wc)),
     );
     browserSession.on("will-download", (event) => {
       event.preventDefault();
@@ -595,6 +665,130 @@ export function createDesktopBrowserViewManager(
       void popupWindow.loadURL(url);
     }
     return popupContents;
+  }
+
+  function abortGrabEntry(
+    entry: BrowserViewEntry,
+    reason: "user" | "navigation" | "replaced",
+  ): void {
+    if (entry.grabOp === null) {
+      return;
+    }
+    entry.grabOp.reason = reason;
+    entry.grabOp.abort();
+  }
+
+  function sendGrabResult(
+    hostWindow: DesktopBrowserHostWindow,
+    result: BbDesktopBrowserGrabResult,
+  ): void {
+    send(hostWindow, BB_DESKTOP_BROWSER_GRAB_RESULT_CHANNEL, result);
+  }
+
+  function beginGrabOnEntry(
+    hostWindow: DesktopBrowserHostWindow,
+    tabId: string,
+    entry: BrowserViewEntry,
+  ): void {
+    abortGrabEntry(entry, "replaced");
+    const webContents = entry.view.webContents;
+    if (webContents.isDestroyed()) {
+      return;
+    }
+    let settled = false;
+    const grabOp = {
+      reason: "user" as "user" | "navigation" | "replaced",
+      abort: (): void => {
+        if (settled) {
+          return;
+        }
+        void evaluateBrowserGrabScript(
+          webContents,
+          BB_BROWSER_GRAB_CANCEL_SCRIPT,
+        ).catch(() => {});
+      },
+    };
+    entry.grabOp = grabOp;
+
+    void (async () => {
+      try {
+        const raw = await evaluateBrowserGrabScript(
+          webContents,
+          BB_BROWSER_GRAB_AWAIT_SCRIPT,
+        );
+        if (settled || webContents.isDestroyed()) {
+          return;
+        }
+        settled = true;
+        if (entry.grabOp === grabOp) {
+          entry.grabOp = null;
+        }
+        const cancelReason = grabOp.reason;
+        if (isBrowserGrabCancellationPayload(raw)) {
+          sendGrabResult(hostWindow, {
+            kind: "cancelled",
+            tabId,
+            reason: cancelReason,
+          });
+          return;
+        }
+        const selection = clampBrowserGrabGuestSelection(raw);
+        if (selection === null) {
+          sendGrabResult(hostWindow, {
+            kind: "cancelled",
+            tabId,
+            reason: cancelReason,
+          });
+          return;
+        }
+        const page = truncateBrowserGrabPageMeta({
+          url: webContents.getURL(),
+          title: (() => {
+            const rawTitle = webContents.getTitle();
+            const url = webContents.getURL();
+            return rawTitle.length > 0 && rawTitle !== url ? rawTitle : null;
+          })(),
+        });
+        let screenshotDataUrl: string | null = null;
+        try {
+          const image = await webContents.capturePage();
+          const viewBounds = entry.view.getBounds();
+          screenshotDataUrl = cropGrabScreenshotToDataUrl({
+            image,
+            rect: selection.rect,
+            viewWidth: viewBounds.width,
+            viewHeight: viewBounds.height,
+          });
+        } catch {
+          screenshotDataUrl = null;
+        }
+        sendGrabResult(hostWindow, {
+          kind: "selected",
+          tabId,
+          url: page.url,
+          title: page.title,
+          tagName: selection.tagName,
+          selector: selection.selector,
+          html: selection.html,
+          css: selection.css,
+          rect: selection.rect,
+          screenshotDataUrl,
+        });
+      } catch {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (entry.grabOp === grabOp) {
+          entry.grabOp = null;
+        }
+        sendGrabResult(hostWindow, {
+          kind: "cancelled",
+          tabId,
+          reason: grabOp.reason,
+        });
+      }
+    })();
   }
 
   function wireWebContents(
@@ -764,6 +958,7 @@ export function createDesktopBrowserViewManager(
     });
     webContents.on("did-start-navigation", () => {
       entry.lastErrorText = null;
+      abortGrabEntry(entry, "navigation");
       refresh();
     });
     webContents.on("page-title-updated", refresh);
@@ -808,6 +1003,7 @@ export function createDesktopBrowserViewManager(
       suppressNextFocusNotification: false,
       visible: false,
       activeFindRequestId: null,
+      grabOp: null,
     };
     wireWebContents(args.hostWindow, args.tabId, entry);
     args.hostWindow.contentView.addChildView(view);
@@ -840,6 +1036,7 @@ export function createDesktopBrowserViewManager(
     }
     entries.delete(key);
     entriesByWebContentsId.delete(entry.view.webContents.id);
+    abortGrabEntry(entry, "replaced");
     clearEntryRendererRecoveryTimer(entry);
     for (const popupWindow of [...entry.popupWindows]) {
       if (!popupWindow.isDestroyed()) popupWindow.destroy();
@@ -1140,6 +1337,16 @@ export function createDesktopBrowserViewManager(
         entry.view.webContents.stopFindInPage(request.action);
       });
     },
+    startGrab({ hostWindow, tabId }) {
+      withEntry({ hostWindow, tabId }, (entry) => {
+        beginGrabOnEntry(hostWindow, tabId, entry);
+      });
+    },
+    cancelGrab({ hostWindow, tabId }) {
+      withEntry({ hostWindow, tabId }, (entry) => {
+        abortGrabEntry(entry, "user");
+      });
+    },
     setVisible({ hostWindow, request }) {
       setEntryVisibility({ hostWindow, request }, true);
     },
@@ -1201,6 +1408,7 @@ export function createDesktopBrowserViewManager(
         }
         entries.delete(key);
         entriesByWebContentsId.delete(entry.view.webContents.id);
+        abortGrabEntry(entry, "replaced");
         clearEntryRendererRecoveryTimer(entry);
         for (const popupWindow of [...entry.popupWindows]) {
           if (!popupWindow.isDestroyed()) {
@@ -1225,6 +1433,7 @@ export function createDesktopBrowserViewManager(
       for (const [key, entry] of [...entries.entries()]) {
         entries.delete(key);
         entriesByWebContentsId.delete(entry.view.webContents.id);
+        abortGrabEntry(entry, "replaced");
         clearEntryRendererRecoveryTimer(entry);
         if (!entry.view.webContents.isDestroyed()) {
           entry.view.webContents.close();

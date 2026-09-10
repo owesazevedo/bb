@@ -10,6 +10,7 @@ import {
 import { COMMAND_TIMEOUT_MS } from "../constants.js";
 import { ApiError } from "../errors.js";
 import { browserRequestProblem } from "../browser-request-guard.js";
+import { htmlPreviewCspForRequest } from "../file-preview-origin-guard.js";
 import type { AppDeps, LoggedWorkSessionDeps } from "../types.js";
 import {
   callHostOnlineRpc,
@@ -36,7 +37,6 @@ const HOST_FILE_LIST_LIMIT_DEFAULT = 1000;
 
 const HTML_PREVIEW_MAX_BYTES = 5 * 1024 * 1024;
 const HTML_PREVIEW_CONTENT_TYPE = "text/html; charset=utf-8";
-const HTML_PREVIEW_CSP = "sandbox allow-scripts";
 const NO_STORE_CACHE_CONTROL = "no-store";
 const NOSNIFF_CONTENT_TYPE_OPTIONS = "nosniff";
 const HTML_MIME_TYPE = "text/html";
@@ -118,22 +118,34 @@ function assertRawFilesystemHtmlPreviewResult(
 
 function createRawFilesystemHtmlPreviewResponse(
   result: DaemonFileReadResult,
+  request: {
+    url: string;
+    method: string;
+    header(name: string): string | undefined;
+  },
 ): Response {
   assertRawFilesystemHtmlPreviewResult(result);
-  return createDaemonFileContentResponse(result, {
-    headers: {
-      "cache-control": NO_STORE_CACHE_CONTROL,
-      "content-security-policy": HTML_PREVIEW_CSP,
-      "content-type": HTML_PREVIEW_CONTENT_TYPE,
-      "x-content-type-options": NOSNIFF_CONTENT_TYPE_OPTIONS,
-    },
+  const headers = new Headers({
+    "cache-control": NO_STORE_CACHE_CONTROL,
+    "content-type": HTML_PREVIEW_CONTENT_TYPE,
+    "x-content-type-options": NOSNIFF_CONTENT_TYPE_OPTIONS,
   });
+  const csp = htmlPreviewCspForRequest({ req: request });
+  if (csp !== null) {
+    headers.set("content-security-policy", csp);
+  }
+  return createDaemonFileContentResponse(result, { headers });
 }
 
 async function serveRawFilesystemHtmlFile(
   deps: LoggedWorkSessionDeps,
   threadId: string,
   rawPath: string,
+  request: {
+    url: string;
+    method: string;
+    header(name: string): string | undefined;
+  },
 ): Promise<Response> {
   const filePath = parseRawFilesystemPath(rawPath);
   assertHtmlPreviewPath(filePath);
@@ -142,10 +154,23 @@ async function serveRawFilesystemHtmlFile(
     deps,
     {
       hostId: environment.hostId,
+<<<<<<< Updated upstream
       path: filePath,
     },
     createRawFilesystemHtmlPreviewResponse,
   );
+=======
+      timeoutMs: COMMAND_TIMEOUT_MS,
+      command: {
+        type: "host.read_file",
+        path: filePath,
+      },
+    });
+    return createRawFilesystemHtmlPreviewResponse(result, request);
+  } catch (error) {
+    return remapDaemonFileRouteError(error);
+  }
+>>>>>>> Stashed changes
 }
 
 export function registerFileRoutes(app: Hono, deps: AppDeps): void {
@@ -155,7 +180,12 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
   const routes = publicApiRoutes.threads;
 
   get(routes.rawFile, async (context, query) =>
-    serveRawFilesystemHtmlFile(deps, context.req.param("id"), query.path),
+    serveRawFilesystemHtmlFile(
+      deps,
+      context.req.param("id"),
+      query.path,
+      context.req,
+    ),
   );
 
   const fileRoutes = publicApiRoutes.files;
@@ -425,6 +455,7 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
       deps,
       {
         hostId: lease.hostId,
+<<<<<<< Updated upstream
         ...(!isHtmlPath
           ? { ifNoneMatch: context.req.header("if-none-match") }
           : {}),
@@ -446,5 +477,30 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
         });
       },
     );
+=======
+        timeoutMs: COMMAND_TIMEOUT_MS,
+        command: {
+          type: "host.read_file",
+          path: joinHostPath(lease.rootPath, segments),
+          rootPath: lease.rootPath,
+        },
+      });
+      const headers = new Headers({
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+      });
+      if (isHtmlMimeType(result.mimeType)) {
+        assertRawFilesystemHtmlPreviewResult(result);
+        const csp = htmlPreviewCspForRequest(context);
+        if (csp !== null) {
+          headers.set("content-security-policy", csp);
+        }
+        headers.set("content-type", HTML_PREVIEW_CONTENT_TYPE);
+      }
+      return createDaemonFileContentResponse(result, { headers });
+    } catch (error) {
+      return remapDaemonFileRouteError(error);
+    }
+>>>>>>> Stashed changes
   });
 }

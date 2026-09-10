@@ -352,7 +352,13 @@ export function useBbNavigate(): BbNavigate {
   >(
     (options) => {
       const normalized = normalizeExperimentalFileOpenOptions(options);
-      return normalized !== null && appNavigation.openFilePreview(normalized);
+      // This API is the shared BB preview panel, not the preferred plugin
+      // file opener. Without an explicit builtin override, `.md` (and other
+      // claimed extensions) reopen Monaco/Docs instead of MarkdownFilePreview.
+      return (
+        normalized !== null &&
+        appNavigation.openFilePreview({ ...normalized, viewer: "builtin" })
+      );
     },
     [appNavigation],
   );

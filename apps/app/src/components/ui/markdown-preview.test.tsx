@@ -535,4 +535,97 @@ describe("MarkdownPreview", () => {
       container.querySelector('a[href="https://example.com"]')?.textContent,
     ).toBe("This should remain a link");
   });
+
+  it("renders a compact browser grab chip without prompt mentions", () => {
+    const { container } = render(
+      <MarkdownPreview
+        content={[
+          "@el:button",
+          "<!-- bb-browser-grab",
+          "Tag: button",
+          "Selector: #cta",
+          "HTML:",
+          '<button id="cta">Buy</button>',
+          "-->",
+        ].join("\n")}
+      />,
+    );
+
+    const chip = container.querySelector("[data-browser-grab-chip]");
+    expect(chip).not.toBeNull();
+    expect(chip?.textContent).toContain("button");
+    expect(container.textContent).not.toContain("bb-browser-grab");
+    expect(container.textContent).not.toContain('<button id="cta">Buy</button>');
+    expect(container.textContent).not.toContain("HTML:");
+    expect(container.textContent).not.toContain("Browser ·");
+  });
+
+  it("upgrades a legacy quoted grab line into a chip", () => {
+    const { container } = render(
+      <MarkdownPreview
+        content={[
+          "> Browser · `#cta` · example.com/pricing",
+          "",
+          "<!-- bb-browser-grab",
+          "Tag: button",
+          "Selector: #cta",
+          "HTML:",
+          '<button id="cta">Buy</button>',
+          "-->",
+        ].join("\n")}
+      />,
+    );
+
+    expect(container.querySelector("[data-browser-grab-chip]")?.textContent).toContain(
+      "button",
+    );
+    expect(container.textContent).not.toContain("bb-browser-grab");
+    expect(container.textContent).not.toContain("Browser ·");
+  });
+
+  it("renders a compact markdown grab chip without exposing the hidden payload", () => {
+    const { container } = render(
+      <MarkdownPreview
+        content={[
+          "@md:Release-Plan",
+          "<!-- bb-markdown-grab",
+          "Path: notes/Release Plan.md",
+          "File: Release Plan.md",
+          "Text:",
+          "Ship the chip.",
+          "-->",
+        ].join("\n")}
+      />,
+    );
+
+    const chip = container.querySelector("[data-markdown-grab-chip]");
+    expect(chip).not.toBeNull();
+    expect(chip?.textContent).toContain("Release-Plan");
+    expect(container.textContent).not.toContain("bb-markdown-grab");
+    expect(container.textContent).not.toContain("Ship the chip.");
+  });
+
+  it("styles Obsidian callouts and skips wikilinks inside code", () => {
+    const { container } = render(
+      <MarkdownPreview
+        content={[
+          "> [!NOTE]",
+          "> Keep the chip compact.",
+          "",
+          "See [[Release Plan|the plan]] and `[[skipped]]`.",
+        ].join("\n")}
+      />,
+    );
+
+    const callout = container.querySelector("blockquote[data-callout='note']");
+    expect(callout).not.toBeNull();
+    expect(callout?.textContent).toContain("Keep the chip compact.");
+    expect(callout?.textContent).not.toContain("[!NOTE]");
+
+    const wikilink = container.querySelector("span.bb-wikilink");
+    expect(wikilink?.textContent).toBe("the plan");
+    expect(wikilink?.getAttribute("data-target")).toBe("Release Plan");
+    expect(container.querySelector("code")?.textContent).toBe("[[skipped]]");
+    expect(container.querySelector("code .bb-wikilink")).toBeNull();
+  });
 });

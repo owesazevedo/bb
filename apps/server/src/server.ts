@@ -87,6 +87,7 @@ import {
   allowedAppOrigins,
   browserRequestProblem,
 } from "./browser-request-guard.js";
+import { filePreviewOriginApiProblem } from "./file-preview-origin-guard.js";
 import {
   callPluginHostRpc,
   disposePluginHostWorkers,
@@ -623,6 +624,14 @@ export function createApp(
   setPluginAgentContributions(pluginService);
   const publicApi = new Hono();
   publicApi.use("*", async (context, next) => {
+    const previewOriginProblem = filePreviewOriginApiProblem(context);
+    if (previewOriginProblem !== null) {
+      throw new ApiError(
+        previewOriginProblem.status,
+        "forbidden_origin",
+        previewOriginProblem.error,
+      );
+    }
     if (PLUGIN_WIRE_HTTP_PATH.test(context.req.path)) {
       return next();
     }

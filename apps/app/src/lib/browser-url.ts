@@ -1,4 +1,5 @@
 import { isLoopbackHostname } from "./loopback-hostname";
+import { isPrivilegedFilePreviewUrl } from "@bb/config/file-preview-origin";
 
 const SEARCH_ENGINE_URL = "https://www.google.com/search";
 const HTTP_SCHEME_PATTERN = /^https?:\/\//i;
@@ -165,11 +166,17 @@ export function getBrowserUrlSecurity(url: string): BrowserUrlSecurity {
     return "none";
   }
   try {
-    const protocol = new URL(url).protocol;
-    if (protocol === "https:") {
+    const parsed = new URL(url);
+    if (parsed.protocol === "https:" || isPrivilegedFilePreviewUrl(url)) {
       return "secure";
     }
-    if (protocol === "http:") {
+    if (parsed.protocol === "file:" && parsed.hostname === "") {
+      return "secure";
+    }
+    if (parsed.protocol === "http:" && isLoopbackHostname(parsed.hostname)) {
+      return "secure";
+    }
+    if (parsed.protocol === "http:") {
       return "insecure";
     }
   } catch {

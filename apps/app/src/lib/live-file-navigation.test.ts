@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  normalizeAppFilePreviewIntent,
   normalizeExperimentalFileOpenOptions,
   normalizeExperimentalLiveFileTarget,
   toFilePreviewLineRange,
@@ -100,5 +101,37 @@ describe("normalizeExperimentalFileOpenOptions", () => {
     expect(
       toFilePreviewLineRange({ kind: "line", line: 42, column: 7 }),
     ).toEqual({ startLineNumber: 42, endLineNumber: 42 });
+  });
+});
+
+describe("normalizeAppFilePreviewIntent", () => {
+  const hostTarget = {
+    kind: "host" as const,
+    hostId: "host_1",
+    path: "/md/DESIGN.md",
+  };
+
+  it("keeps a builtin viewer after stripping it for plugin-payload validation", () => {
+    expect(
+      normalizeAppFilePreviewIntent({
+        target: hostTarget,
+        location: null,
+        viewer: "builtin",
+      }),
+    ).toEqual({
+      target: hostTarget,
+      location: null,
+      viewer: "builtin",
+    });
+  });
+
+  it("still rejects extra plugin-payload keys besides viewer", () => {
+    expect(
+      normalizeExperimentalFileOpenOptions({
+        target: hostTarget,
+        location: null,
+        viewer: "builtin",
+      }),
+    ).toBeNull();
   });
 });

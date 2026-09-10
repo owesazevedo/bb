@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { act, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { rewriteToFilePreviewOrigin } from "@bb/config/file-preview-origin";
 import {
   FilePreview,
   buildCsvPreviewData,
@@ -535,10 +536,21 @@ describe("FilePreview", () => {
     );
 
     expect(openSpy).toHaveBeenCalledWith(
-      `${window.location.origin}/api/v1/threads/thr_1/worktree/files/docs/progress-vis.html`,
+      rewriteToFilePreviewOrigin(
+        "/api/v1/threads/thr_1/worktree/files/docs/progress-vis.html",
+        window.location.href,
+      ),
       "_blank",
       "noopener,noreferrer",
     );
+    const iframe = document.querySelector("iframe");
+    expect(iframe?.getAttribute("src")).toBe(
+      rewriteToFilePreviewOrigin(
+        "/api/v1/threads/thr_1/worktree/files/docs/progress-vis.html",
+        window.location.href,
+      ),
+    );
+    expect(iframe?.hasAttribute("sandbox")).toBe(false);
     openSpy.mockRestore();
   });
 
@@ -602,7 +614,11 @@ describe("FilePreview", () => {
       );
 
       expect(openExternalUrl).toHaveBeenCalledWith(
-        `${window.location.origin}/api/v1/threads/thr_1/worktree/files/docs/progress-vis.html`,
+        rewriteToFilePreviewOrigin(
+          "/api/v1/threads/thr_1/worktree/files/docs/progress-vis.html",
+          window.location.href,
+          { privilegedScheme: true },
+        ),
       );
     } finally {
       delete (window as unknown as { bbDesktop?: unknown }).bbDesktop;
@@ -688,6 +704,89 @@ describe("FilePreview", () => {
     const iframe = container.querySelector("iframe");
     expect(iframe?.getAttribute("src")).toBe("/preview/docs/report.html");
     expect(iframe?.closest('[aria-hidden="true"]')).toBeNull();
+  });
+
+  it("shows Edit and a disabled Save until the markdown draft changes", async () => {
+    const onSaveMarkdown = vi.fn();
+    render(
+      <FilePreview
+        path="notes/Release Plan.md"
+        onSaveMarkdown={onSaveMarkdown}
+        state={{
+          kind: "ready",
+          file: { name: "Release Plan.md", contents: "# Plan\n" },
+          lineRange: null,
+          textPreviewKind: "markdown",
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Edit" }).getAttribute("aria-pressed"),
+    ).toBe("false");
+    expect(
+      (screen.getByRole("button", { name: "Save" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+
+    const editor = await screen.findByRole("textbox", {
+      name: "Edit markdown",
+    });
+    expect(
+      screen.getByRole("button", { name: "Edit" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    fireEvent.change(editor, { target: { value: "# Plan\n\nShip the chip.\n" } });
+    expect(
+      (screen.getByRole("button", { name: "Save" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSaveMarkdown).toHaveBeenCalledWith({
+      path: "notes/Release Plan.md",
+      contents: "# Plan\n\nShip the chip.\n",
+    });
+  });
+
+  it("omits Edit for HTML previews and for markdown without a save handler", () => {
+    const { rerender } = render(
+      <FilePreview
+        path="docs/report.html"
+        state={{
+          kind: "html",
+          file: {
+            name: "report.html",
+            contents: "<!doctype html><h1>Report</h1>",
+          },
+          iframe: {
+            sandbox: "allow-scripts",
+            title: "docs/report.html",
+            url: "/preview/docs/report.html",
+          },
+          lineRange: null,
+        }}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+
+    rerender(
+      <FilePreview
+        path="README.md"
+        state={{
+          kind: "ready",
+          file: { name: "README.md", contents: "# Preview" },
+          lineRange: null,
+          textPreviewKind: "markdown",
+        }}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Preview" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Raw" })).not.toBeNull();
   });
 
   it("renders CSV previews as a table by default", () => {

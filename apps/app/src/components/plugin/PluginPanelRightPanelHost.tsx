@@ -85,7 +85,7 @@ import {
   type AppFixedTabTargetState,
 } from "@/lib/app-fixed-tab-navigation";
 import {
-  normalizeExperimentalFileOpenOptions,
+  normalizeAppFilePreviewIntent,
   toFilePreviewLineRange,
 } from "@/lib/live-file-navigation";
 import { useOptionalPaneContext } from "@/views/thread-detail/PaneContext";
@@ -98,6 +98,13 @@ import { PluginPanelTabContent } from "./PluginPanelActions";
 import { PluginDetailRouteNavigationProvider } from "@/components/ui/app-route-anchor";
 import { usePluginCatalogSearch } from "@/hooks/queries/plugin-catalog-queries";
 import { usePluginList } from "@/hooks/queries/plugin-settings-queries";
+import { appToast } from "@/components/ui/app-toast";
+import { getPromptDraftAccessor } from "@/hooks/usePromptDraftStorage";
+import { requestComposerFocus } from "@/lib/composer-focus-requests";
+import {
+  applyMarkdownGrabToDraftAccessor,
+  type MarkdownGrabSelectedResult,
+} from "@/lib/markdown-grab-quote";
 
 const TERMINAL_COLS = 100;
 const TERMINAL_ROWS = 30;
@@ -526,7 +533,7 @@ export function PluginPanelRightPanelHost({
   );
   const openFilePreview = useCallback(
     (intent: AppFilePreviewIntent) => {
-      const normalized = normalizeExperimentalFileOpenOptions(intent);
+      const normalized = normalizeAppFilePreviewIntent(intent);
       if (normalized === null || panel === null) return false;
       selectPersistedPanelTab();
       const lineRange = toFilePreviewLineRange(normalized.location);
@@ -860,6 +867,17 @@ export function PluginPanelRightPanelHost({
     ],
   );
 
+  const handlePluginMarkdownGrab = useCallback(
+    (result: MarkdownGrabSelectedResult) => {
+      const accessor = getPromptDraftAccessor({ kind: "new-thread" });
+      if (applyMarkdownGrabToDraftAccessor(accessor, result)) {
+        requestComposerFocus(accessor.storageKey);
+        appToast.success("Note added to New thread composer");
+      }
+    },
+    [],
+  );
+
   const renderPanelTabContent = useCallback(
     function renderTabContent(tab: SecondaryFileFixedPanelTab): ReactNode {
       switch (tab.kind) {
@@ -923,6 +941,7 @@ export function PluginPanelRightPanelHost({
               environmentId={tab.environmentId}
               isPanelOpen={isOpen}
               lineRange={tab.lineRange}
+              onMarkdownGrab={handlePluginMarkdownGrab}
               source={tab.source}
               statusLabel={tab.statusLabel}
             />
@@ -934,6 +953,7 @@ export function PluginPanelRightPanelHost({
               hostId={tab.hostId}
               isPanelOpen={isOpen}
               lineRange={tab.lineRange}
+              onMarkdownGrab={handlePluginMarkdownGrab}
             />
           );
         case "thread-storage-file-preview":
@@ -942,6 +962,7 @@ export function PluginPanelRightPanelHost({
               activePath={tab.path}
               isPanelOpen={isOpen}
               lineRange={tab.lineRange}
+              onMarkdownGrab={handlePluginMarkdownGrab}
               threadId={tab.threadId}
             />
           );
@@ -962,6 +983,7 @@ export function PluginPanelRightPanelHost({
     [
       activateTab,
       createTerminal.isPending,
+      handlePluginMarkdownGrab,
       hostsQuery.isLoading,
       isOpen,
       openBrowser,

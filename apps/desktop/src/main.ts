@@ -161,6 +161,7 @@ import {
 } from "./desktop-browser-view.js";
 import { resolveDesktopBrowserAppCommand } from "./desktop-browser-shortcuts.js";
 import { registerDesktopBrowserIpc } from "./desktop-browser-main-ipc.js";
+<<<<<<< Updated upstream
 import { createBrowserImportService } from "./browser-import/browser-import.js";
 import { readMacAppIcon } from "./browser-import/mac-app-icon.js";
 import {
@@ -177,8 +178,15 @@ import {
   BB_DESKTOP_BROWSER_IMPORT_COOKIES_CHANNEL,
   BB_DESKTOP_BROWSER_OPEN_FULL_DISK_ACCESS_SETTINGS_CHANNEL,
 } from "./desktop-browser-ipc.js";
+=======
+import {
+  installFilePreviewProtocolHandler,
+  registerFilePreviewSchemePrivileges,
+} from "./file-preview-protocol.js";
+>>>>>>> Stashed changes
 import { parseDesktopSystemConfig } from "./desktop-system-config.js";
 import { ensurePackagedUserShellPath } from "./desktop-shell-path.js";
+import { applyForkPackagedIsolation } from "./fork-isolation.js";
 import { resolveDesktopReloadShortcut } from "./desktop-reload-shortcut.js";
 import {
   createLogTailer,
@@ -1967,6 +1975,7 @@ async function initializeRuntime(args: InitializeRuntimeArgs): Promise<void> {
 }
 
 async function runDesktopApp(): Promise<void> {
+  registerFilePreviewSchemePrivileges();
   ensurePackagedUserShellPath({
     env: process.env,
     isPackaged: app.isPackaged,
@@ -1974,10 +1983,19 @@ async function runDesktopApp(): Promise<void> {
     platform: process.platform,
   });
 
-  const applicationName = app.isPackaged
-    ? DESKTOP_RELEASE_INFO.applicationName
-    : "bb-dev";
+  const forkIsolation = applyForkPackagedIsolation({
+    argv: process.argv,
+    env: process.env,
+    homeDir: homedir(),
+    isPackaged: app.isPackaged,
+    platform: process.platform,
+  });
+  Object.assign(process.env, forkIsolation.env);
+  const applicationName = forkIsolation.appName;
   app.setName(applicationName);
+  if (forkIsolation.userDataPath !== null) {
+    app.setPath("userData", forkIsolation.userDataPath);
+  }
   installAboutPanel(applicationName);
 
   if (!app.requestSingleInstanceLock()) {
@@ -2001,12 +2019,13 @@ async function runDesktopApp(): Promise<void> {
     }
   });
   app.on("activate", () => {
-    if (desktopWindowFactory?.hasOpenWindows() === false) {
-      void createApplicationWindow({
-        initialUrl: currentWindowUrl,
-        stateKey: null,
-      });
+    if (desktopWindowFactory?.focusFirstWindow() === true) {
+      return;
     }
+    void createApplicationWindow({
+      initialUrl: currentWindowUrl,
+      stateKey: null,
+    });
   });
   app.on("did-become-active", () => {
     void desktopUpdateService?.checkAfterActive();
@@ -2039,6 +2058,7 @@ async function runDesktopApp(): Promise<void> {
   });
 
   await app.whenReady();
+  installFilePreviewProtocolHandler(session.defaultSession);
   if (app.isPackaged) {
     await session.defaultSession.clearCache();
   }

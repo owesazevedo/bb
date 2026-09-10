@@ -382,7 +382,9 @@ async function createPendingThreadAndAttemptFirstDispatch(
 
     const startContext: PendingThreadStartContext = {
       environmentIntent: args.environmentIntent,
-      fork: args.fork?.descriptor ?? null,
+      fork: deps.providerRegistry.supportsFork(args.request.providerId)
+        ? (args.fork?.descriptor ?? null)
+        : null,
       ...(args.providerInput !== undefined
         ? { providerInput: args.providerInput }
         : {}),
@@ -683,7 +685,11 @@ export async function createThreadFromRequest(
     sourceThread,
   });
 
-  if (request.originKind !== null && fork === null) {
+  if (
+    request.originKind !== null &&
+    fork === null &&
+    deps.providerRegistry.supportsFork(request.providerId)
+  ) {
     throw new ApiError(
       400,
       "fork_source_session_unavailable",

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isHttpOrHttpsUrl,
+  isLocalHtmlFileUrl,
   openUrlByPreference,
   resolveUrlOpenTarget,
 } from "./in-app-browser-link-preference";
@@ -76,6 +77,27 @@ describe("resolveUrlOpenTarget", () => {
       ).toBe("unhandled");
     }
   });
+
+  it("opens local HTML files in the in-app browser on desktop", () => {
+    expect(isLocalHtmlFileUrl("file:///Users/me/landing/index.html")).toBe(
+      true,
+    );
+    expect(isLocalHtmlFileUrl("file:///Users/me/app.ts")).toBe(false);
+    expect(
+      resolveUrlOpenTarget({
+        desktopBrowserAvailable: true,
+        openLinksInAppBrowser: false,
+        url: "file:///Users/me/landing/index.html",
+      }),
+    ).toBe("in-app-browser");
+    expect(
+      resolveUrlOpenTarget({
+        desktopBrowserAvailable: false,
+        openLinksInAppBrowser: true,
+        url: "file:///Users/me/landing/index.html",
+      }),
+    ).toBe("unhandled");
+  });
 });
 
 describe("openUrlByPreference", () => {
@@ -115,7 +137,7 @@ describe("openUrlByPreference", () => {
     expect(openedExternally).toEqual(["https://example.com/docs"]);
   });
 
-  it("leaves file links and non-web schemes to their dedicated handlers", () => {
+  it("leaves non-HTML file links and non-web schemes to their dedicated handlers", () => {
     const openedInApp: string[] = [];
     const openedExternally: string[] = [];
 
@@ -130,6 +152,24 @@ describe("openUrlByPreference", () => {
     ).toBe(false);
 
     expect(openedInApp).toEqual([]);
+    expect(openedExternally).toEqual([]);
+  });
+
+  it("opens local HTML files in the in-app browser", () => {
+    const openedInApp: string[] = [];
+    const openedExternally: string[] = [];
+
+    expect(
+      openUrlByPreference({
+        desktopBrowserAvailable: true,
+        openExternalBrowser: (url) => openedExternally.push(url),
+        openInAppBrowser: (url) => openedInApp.push(url),
+        openLinksInAppBrowser: false,
+        url: "file:///Users/me/landing/index.html",
+      }),
+    ).toBe(true);
+
+    expect(openedInApp).toEqual(["file:///Users/me/landing/index.html"]);
     expect(openedExternally).toEqual([]);
   });
 });

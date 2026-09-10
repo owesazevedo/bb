@@ -49,15 +49,24 @@ export interface DesktopWindowWebContents extends DesktopContextMenuWebContents 
   setZoomFactor(factor: number): void;
 }
 
+export interface DesktopWindowCloseEvent {
+  preventDefault(): void;
+}
+
 export interface DesktopBrowserWindow extends StatefulBrowserWindow {
   readonly id: number;
   focus(): void;
+  hide(): void;
   isFocused(): boolean;
   isMinimized(): boolean;
   loadURL(url: string): Promise<void>;
   maximize(): void;
   on(
-    eventName: "close" | "closed" | "enter-full-screen" | "leave-full-screen",
+    eventName: "close",
+    listener: (event: DesktopWindowCloseEvent) => void,
+  ): void;
+  on(
+    eventName: "closed" | "enter-full-screen" | "leave-full-screen",
     listener: () => void,
   ): void;
   once(eventName: "ready-to-show", listener: () => void): void;
@@ -208,6 +217,33 @@ async function loadUrlIntoWindow(args: LoadUrlIntoWindowArgs): Promise<void> {
   }
 }
 
+function revealDesktopWindow(browserWindow: DesktopBrowserWindow): void {
+  browserWindow.show();
+  if (browserWindow.isMinimized()) {
+    browserWindow.restore();
+  }
+  browserWindow.focus();
+}
+
+function shouldHideLastMacWindowOnClose(args: {
+  isMac: boolean;
+  isQuitting: boolean;
+  openWindowCount: number;
+}): boolean {
+  return args.isMac && !args.isQuitting && args.openWindowCount <= 1;
+}
+
+function ignoreMissingWindowStateFile(error: unknown): void {
+  if (
+    error instanceof Error &&
+    "code" in error &&
+    error.code === "ENOENT"
+  ) {
+    return;
+  }
+  throw error;
+}
+
 export function createDesktopWindowFactory(
   args: CreateDesktopWindowFactoryArgs,
 ): DesktopWindowFactory {
@@ -255,13 +291,26 @@ export function createDesktopWindowFactory(
       browserWindow.once("ready-to-show", () => {
         browserWindow.show();
       });
+      browserWindow.on("close", (event) => {
+        if (
+          !shouldHideLastMacWindowOnClose({
+            isMac: args.isMac,
+            isQuitting: args.isQuitting(),
+            openWindowCount: activeWindows.size,
+          })
+        ) {
+          return;
+        }
+        event.preventDefault();
+        browserWindow.hide();
+      });
       browserWindow.on("closed", () => {
         activeWindows.delete(stateKey);
         if (!args.isQuitting()) {
           void removePersistedWindowState({
             stateKey,
             userDataPath: args.userDataPath,
-          });
+          }).catch(ignoreMissingWindowStateFile);
         }
       });
       browserWindow.webContents.setWindowOpenHandler((details) => {
@@ -324,10 +373,7 @@ export function createDesktopWindowFactory(
 
   function focusFirstWindow(): boolean {
     for (const browserWindow of activeWindows.values()) {
-      if (browserWindow.isMinimized()) {
-        browserWindow.restore();
-      }
-      browserWindow.focus();
+      revealDesktopWindow(browserWindow);
       return true;
     }
     return false;
@@ -337,14 +383,11 @@ export function createDesktopWindowFactory(
     loadArgs: LoadDesktopWindowsUrlArgs,
   ): Promise<boolean> {
     for (const browserWindow of activeWindows.values()) {
-      if (browserWindow.isMinimized()) {
-        browserWindow.restore();
-      }
       await loadUrlIntoWindow({
         browserWindow,
         url: loadArgs.url,
       });
-      browserWindow.focus();
+      revealDesktopWindow(browserWindow);
       return true;
     }
     return false;
@@ -352,11 +395,8 @@ export function createDesktopWindowFactory(
 
   function sendToFirstWindow(channel: string, payload: unknown): boolean {
     for (const browserWindow of activeWindows.values()) {
-      if (browserWindow.isMinimized()) {
-        browserWindow.restore();
-      }
       browserWindow.webContents.send(channel, payload);
-      browserWindow.focus();
+      revealDesktopWindow(browserWindow);
       return true;
     }
     return false;
