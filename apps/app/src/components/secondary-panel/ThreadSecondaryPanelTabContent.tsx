@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo } from "react";
+import type { UseQueryResult } from "@tanstack/react-query";
 import type { DiffPresentation } from "@/components/code/code-rendering";
 import type { WorkspaceDiffTarget } from "@bb/domain";
 import type { MarkdownLinkRouting } from "@/components/ui/markdown-link-routing.js";
@@ -33,18 +34,17 @@ import {
 } from "@/lib/file-content-urls";
 import type {
   EnvironmentFilePreviewSource,
+  FilePreview,
   FilePreviewLineRange,
   WorkspaceFilePreviewStatusLabel,
 } from "@bb/client-core";
 import { cn } from "@bb/shared-ui/lib/utils";
+import { PANEL_SCROLL_SLOT_CLASS } from "./panelChromeClasses";
 import { DiffFilesPanel } from "./git-diff/DiffFilesPanel";
 import { clearDiffFileCardStates } from "./git-diff/diffFilesStore";
 import { buildGitDiffIdentity } from "./git-diff/gitDiffPanelHelpers";
 import { useDiffFileContentsRequester } from "./git-diff/useDiffFileContentsRequester";
-import {
-  SecondaryPanelFilePreview,
-  ThreadStorageFilePreview,
-} from "./ThreadStorageFilePreview";
+import { SecondaryPanelFilePreview } from "./ThreadStorageFilePreview";
 import {
   buildMarkdownFileImageRouting,
   buildMarkdownLeaseImageRouting,
@@ -52,13 +52,10 @@ import {
 import { getAbsoluteDirname } from "@/lib/absolute-file-path";
 
 const GIT_DIFF_SKELETON_FILE_COUNT = 3;
-const PANEL_SCROLL_SLOT_CLASS =
-  "min-h-0 flex-1 overflow-x-auto overflow-y-auto";
 
 interface GitDiffTabContentProps {
   environmentId?: string;
   target: WorkspaceDiffTarget | undefined;
-  isDiffPanelActive: boolean;
   isPanelOpen: boolean;
   gitDiffPresentation: DiffPresentation;
   onClearPendingGitDiffIntent?: () => void;
@@ -159,6 +156,22 @@ function resolveMarkdownGrabHandler(args: {
   return applyMarkdownGrabToNewThreadComposer;
 }
 
+function filePreviewQueryProps(query: UseQueryResult<FilePreview>) {
+  return {
+    error: query.error,
+    filePreview: query.data,
+    isLoading: query.isLoading,
+    isRefreshing: query.isFetching,
+    onRefresh: () => void query.refetch(),
+  };
+}
+
+function GitDiffMessageSlot({ children }: { children: ReactNode }) {
+  return (
+    <div className={cn(PANEL_SCROLL_SLOT_CLASS, "px-4 pb-3")}>{children}</div>
+  );
+}
+
 function ThreadDiffSkeleton() {
   return (
     <div className="space-y-2 pt-2">
@@ -191,7 +204,6 @@ function ThreadDiffSkeleton() {
 export function GitDiffTabContent({
   environmentId,
   target,
-  isDiffPanelActive,
   isPanelOpen,
   gitDiffPresentation,
   onClearPendingGitDiffIntent,
@@ -202,10 +214,7 @@ export function GitDiffTabContent({
   workspaceRootPath,
 }: GitDiffTabContentProps) {
   const isQueryEnabled =
-    isDiffPanelActive &&
-    isPanelOpen &&
-    Boolean(environmentId) &&
-    target !== undefined;
+    isPanelOpen && Boolean(environmentId) && target !== undefined;
   const {
     data: diffFilesResponse,
     dataUpdatedAt: diffFilesUpdatedAt,
@@ -243,15 +252,15 @@ export function GitDiffTabContent({
 
   if (isPreparing) {
     return (
-      <div className={cn(PANEL_SCROLL_SLOT_CLASS, "px-4 pb-3")}>
+      <GitDiffMessageSlot>
         <ThreadDiffSkeleton />
-      </div>
+      </GitDiffMessageSlot>
     );
   }
 
   if (diffFilesError) {
     return (
-      <div className={cn(PANEL_SCROLL_SLOT_CLASS, "px-4 pb-3")}>
+      <GitDiffMessageSlot>
         <div className="rounded-lg border border-surface-destructive-border bg-surface-destructive px-3 py-2 text-xs text-destructive">
           <p>
             {diffFilesError instanceof Error
@@ -259,58 +268,52 @@ export function GitDiffTabContent({
               : "Failed to load git diff"}
           </p>
         </div>
-      </div>
+      </GitDiffMessageSlot>
     );
   }
 
   if (diffFilesResponse === undefined) {
     return (
-      <div className={cn(PANEL_SCROLL_SLOT_CLASS, "px-4 pb-3")}>
+      <GitDiffMessageSlot>
         <EmptyStatePanel className="rounded-lg">
           No diff to display.
         </EmptyStatePanel>
-      </div>
+      </GitDiffMessageSlot>
     );
   }
 
   if (diffFilesResponse.outcome === "unavailable") {
     return (
-      <div className={cn(PANEL_SCROLL_SLOT_CLASS, "px-4 pb-3")}>
+      <GitDiffMessageSlot>
         <div className="rounded-lg border border-border bg-surface-raised px-3 py-2 text-xs text-muted-foreground">
           <p className="font-medium text-foreground">Workspace unavailable</p>
           <p className="mt-1 leading-5">{diffFilesResponse.failure.message}</p>
         </div>
-      </div>
+      </GitDiffMessageSlot>
     );
   }
 
   if (diffFilesResponse.outcome === "not_applicable") {
     return (
-      <div className={cn(PANEL_SCROLL_SLOT_CLASS, "px-4 pb-3")}>
+      <GitDiffMessageSlot>
         <div className="rounded-lg border border-border bg-surface-raised px-3 py-2 text-xs text-muted-foreground">
           <p className="mt-1 leading-5">{diffFilesResponse.message}</p>
         </div>
-      </div>
+      </GitDiffMessageSlot>
     );
   }
 
-  if (diffFilesResponse.files.length === 0) {
+  if (
+    diffFilesResponse.files.length === 0 ||
+    !environmentId ||
+    target === undefined
+  ) {
     return (
-      <div className={cn(PANEL_SCROLL_SLOT_CLASS, "px-4 pb-3")}>
+      <GitDiffMessageSlot>
         <EmptyStatePanel className="rounded-lg">
           No diff to display.
         </EmptyStatePanel>
-      </div>
-    );
-  }
-
-  if (!environmentId || target === undefined) {
-    return (
-      <div className={cn(PANEL_SCROLL_SLOT_CLASS, "px-4 pb-3")}>
-        <EmptyStatePanel className="rounded-lg">
-          No diff to display.
-        </EmptyStatePanel>
-      </div>
+      </GitDiffMessageSlot>
     );
   }
 
@@ -368,15 +371,12 @@ export function WorkspaceFilePreviewTabContent({
       markdownLinkRouting?.localImage === undefined,
     staleTime: 5_000,
   });
-  const {
-    data: workspaceFilePreview,
-    error: workspaceFilePreviewError,
-    isFetching: isWorkspaceFilePreviewFetching,
-    isLoading: isWorkspaceFilePreviewLoading,
-    refetch: refetchWorkspaceFilePreview,
-  } = useEnvironmentFilePreview(environmentId, activePath, source, {
-    enabled: isPanelOpen,
-  });
+  const workspaceFilePreviewQuery = useEnvironmentFilePreview(
+    environmentId,
+    activePath,
+    source,
+    { enabled: isPanelOpen },
+  );
   const environmentRootPath = environmentQuery.data?.path ?? null;
   const environmentProjectId = environmentQuery.data?.projectId;
   const resolvedMarkdownLinkRouting = useMemo(() => {
@@ -416,17 +416,14 @@ export function WorkspaceFilePreviewTabContent({
 
   return (
     <SecondaryPanelFilePreview
+      {...filePreviewQueryProps(workspaceFilePreviewQuery)}
       activePath={activePath}
       copyPath={copyPath}
-      error={workspaceFilePreviewError}
-      filePreview={workspaceFilePreview}
       htmlPreviewUrl={
         threadId && source?.kind === "working-tree"
           ? buildThreadWorktreeRawContentUrl(threadId, activePath)
           : null
       }
-      isLoading={isWorkspaceFilePreviewLoading}
-      isRefreshing={isWorkspaceFilePreviewFetching}
       lineRange={lineRange}
       markdownLinkRouting={resolvedMarkdownLinkRouting}
       onSelectionAddToChat={onSelectionAddToChat}
@@ -435,7 +432,6 @@ export function WorkspaceFilePreviewTabContent({
         onSelectionAddToChat,
       })}
       onOpenInEditor={onOpenInEditor}
-      onRefresh={() => void refetchWorkspaceFilePreview()}
       statusLabel={statusLabel}
     />
   );
@@ -456,13 +452,7 @@ export function ProjectFilePreviewTabContent({
   rootPath = null,
   threadId = null,
 }: ProjectFilePreviewTabContentProps) {
-  const {
-    data: projectFilePreview,
-    error: projectFilePreviewError,
-    isFetching: isProjectFilePreviewFetching,
-    isLoading: isProjectFilePreviewLoading,
-    refetch: refetchProjectFilePreview,
-  } = useProjectFilePreview(
+  const projectFilePreviewQuery = useProjectFilePreview(
     projectId,
     activePath,
     { environmentId, hostId },
@@ -495,12 +485,9 @@ export function ProjectFilePreviewTabContent({
 
   return (
     <SecondaryPanelFilePreview
+      {...filePreviewQueryProps(projectFilePreviewQuery)}
       activePath={activePath}
       copyPath={copyPath}
-      error={projectFilePreviewError}
-      filePreview={projectFilePreview}
-      isLoading={isProjectFilePreviewLoading}
-      isRefreshing={isProjectFilePreviewFetching}
       lineRange={lineRange}
       markdownLinkRouting={resolvedMarkdownLinkRouting}
       onSelectionAddToChat={onSelectionAddToChat}
@@ -509,7 +496,6 @@ export function ProjectFilePreviewTabContent({
         onSelectionAddToChat,
       })}
       onOpenInEditor={onOpenInEditor}
-      onRefresh={() => void refetchProjectFilePreview()}
       statusLabel={null}
     />
   );
@@ -527,15 +513,12 @@ export function HostFilePreviewTabContent({
   onOpenInEditor,
   threadId,
 }: HostFilePreviewTabContentProps) {
-  const {
-    data: hostFilePreview,
-    error: hostFilePreviewError,
-    isFetching: isHostFilePreviewFetching,
-    isLoading: isHostFilePreviewLoading,
-    refetch: refetchHostFilePreview,
-  } = useThreadHostFilePreview(threadId, environmentId, activePath, {
-    enabled: isPanelOpen,
-  });
+  const hostFilePreviewQuery = useThreadHostFilePreview(
+    threadId,
+    environmentId,
+    activePath,
+    { enabled: isPanelOpen },
+  );
   const resolvedMarkdownLinkRouting = useMemo(() => {
     return buildMarkdownFileImageRouting({
       path: activePath,
@@ -551,13 +534,10 @@ export function HostFilePreviewTabContent({
 
   return (
     <SecondaryPanelFilePreview
+      {...filePreviewQueryProps(hostFilePreviewQuery)}
       activePath={activePath}
       copyPath={copyPath}
-      error={hostFilePreviewError}
-      filePreview={hostFilePreview}
       htmlPreviewUrl={buildRawFilesystemHtmlContentUrl(threadId, activePath)}
-      isLoading={isHostFilePreviewLoading}
-      isRefreshing={isHostFilePreviewFetching}
       lineRange={lineRange}
       markdownLinkRouting={resolvedMarkdownLinkRouting}
       onSelectionAddToChat={onSelectionAddToChat}
@@ -566,7 +546,6 @@ export function HostFilePreviewTabContent({
         onSelectionAddToChat,
       })}
       onOpenInEditor={onOpenInEditor}
-      onRefresh={() => void refetchHostFilePreview()}
       statusLabel={null}
     />
   );
@@ -580,20 +559,17 @@ export function HostScopedFilePreviewTabContent({
   onMarkdownGrab,
   onOpenInEditor,
 }: HostScopedFilePreviewTabContentProps) {
-  const {
-    data: hostFilePreview,
-    error,
-    isFetching,
-    isLoading,
-    refetch,
-  } = useHostFilePreview(hostId, activePath, { enabled: isPanelOpen });
+  const hostFilePreviewQuery = useHostFilePreview(hostId, activePath, {
+    enabled: isPanelOpen,
+  });
+  const hostFilePreviewUrl = hostFilePreviewQuery.data?.url;
   const markdownLinkRouting = useMemo(() => {
     return buildMarkdownLeaseImageRouting({
       path: activePath,
       rootPath: getAbsoluteDirname({ path: activePath }),
-      previewUrl: hostFilePreview?.url,
+      previewUrl: hostFilePreviewUrl,
     });
-  }, [activePath, hostFilePreview?.url]);
+  }, [activePath, hostFilePreviewUrl]);
   const handleMarkdownGrab = resolveMarkdownGrabHandler({
     onMarkdownGrab,
   });
@@ -606,7 +582,7 @@ export function HostScopedFilePreviewTabContent({
           content: contents,
           contentEncoding: "utf8",
         });
-        await refetch();
+        await hostFilePreviewQuery.refetch();
         appToast.success("Saved");
       } catch (error) {
         appToast.error(
@@ -615,23 +591,19 @@ export function HostScopedFilePreviewTabContent({
         throw error;
       }
     },
-    [hostId, refetch],
+    [hostFilePreviewQuery, hostId],
   );
   return (
     <SecondaryPanelFilePreview
+      {...filePreviewQueryProps(hostFilePreviewQuery)}
       activePath={activePath}
       copyPath={activePath}
-      error={error}
-      filePreview={hostFilePreview}
-      htmlPreviewUrl={hostFilePreview?.url ?? null}
-      isLoading={isLoading}
-      isRefreshing={isFetching}
+      htmlPreviewUrl={hostFilePreviewUrl ?? null}
       lineRange={lineRange}
       markdownLinkRouting={markdownLinkRouting}
       onMarkdownGrab={handleMarkdownGrab}
       onSaveMarkdown={handleSaveMarkdown}
       onOpenInEditor={onOpenInEditor}
-      onRefresh={() => void refetch()}
       statusLabel={null}
     />
   );
@@ -648,15 +620,11 @@ export function ThreadStorageFilePreviewTabContent({
   onOpenInEditor,
   threadId,
 }: ThreadStorageFilePreviewTabContentProps) {
-  const {
-    data: threadStorageFilePreview,
-    error: threadStorageFilePreviewError,
-    isFetching: isThreadStorageFilePreviewFetching,
-    isLoading: isThreadStorageFilePreviewLoading,
-    refetch: refetchThreadStorageFilePreview,
-  } = useThreadStorageFilePreview(threadId, activePath, {
-    enabled: isPanelOpen,
-  });
+  const threadStorageFilePreviewQuery = useThreadStorageFilePreview(
+    threadId,
+    activePath,
+    { enabled: isPanelOpen },
+  );
   const resolvedMarkdownLinkRouting = useMemo(() => {
     return buildMarkdownFileImageRouting({
       path: activePath,
@@ -669,13 +637,11 @@ export function ThreadStorageFilePreviewTabContent({
   }, [activePath, markdownLinkRouting, threadId]);
 
   return (
-    <ThreadStorageFilePreview
+    <SecondaryPanelFilePreview
+      {...filePreviewQueryProps(threadStorageFilePreviewQuery)}
       activePath={activePath}
       copyPath={copyPath}
-      error={threadStorageFilePreviewError}
-      filePreview={threadStorageFilePreview}
-      isLoading={isThreadStorageFilePreviewLoading}
-      isRefreshing={isThreadStorageFilePreviewFetching}
+      htmlPreviewUrl={buildThreadStorageRawContentUrl(threadId, activePath)}
       lineRange={lineRange}
       markdownLinkRouting={resolvedMarkdownLinkRouting}
       onSelectionAddToChat={onSelectionAddToChat}
@@ -684,8 +650,7 @@ export function ThreadStorageFilePreviewTabContent({
         onSelectionAddToChat,
       })}
       onOpenInEditor={onOpenInEditor}
-      onRefresh={() => void refetchThreadStorageFilePreview()}
-      threadId={threadId}
+      statusLabel={null}
     />
   );
 }

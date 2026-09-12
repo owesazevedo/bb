@@ -18,13 +18,18 @@ import {
 import { wsManager } from "./ws";
 
 const unavailableSystemConfig: SystemConfigResponse = {
+  serverAccess: {
+    providers: [],
+    defaultProviderId: "direct",
+    effectiveUrl: null,
+    urlSource: null,
+  },
   generalSettings: defaultAppSettings,
   keybindings: [],
   defaultKeybindings: [],
   keybindingOverrides: [],
   experiments: {
     changelogPreview: false,
-    editMessages: false,
     mobileApp: false,
     sidebarProgressiveDisclosure: false,
     timelineWindowing: false,

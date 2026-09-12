@@ -1,13 +1,23 @@
+import { MachineEnvironmentSettings } from "@/components/settings/MachineEnvironmentSettings";
+import { MachineAccessSettings } from "@/components/settings/MachineAccessSettings";
 import { useMemo, useRef, useState, type ReactNode } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import {
+  Navigate,
+  useNavigate,
+  useLocation,
+  matchPath,
+} from "react-router-dom";
 import "@bb/shared-ui/icon-extended";
 import {
   builtInThemes,
   defaultAppSettings,
   defaultAppTheme,
   defaultExperiments,
+  experimentKeys,
   managedBranchPrefixSchema,
   type AppTheme,
+  type ExperimentKey,
+  type Experiments,
   type FaviconColorPreference,
   type PluginThemeMeta,
 } from "@bb/domain";
@@ -44,9 +54,13 @@ import { UsageLimitsSettingsSection } from "@/components/settings/UsageLimitsSet
 import { ProvidersSettingsSection } from "@/components/settings/ProvidersSettingsSection";
 import { CodeRendererSettings } from "@/components/settings/CodeRendererSettings";
 import { SidebarThreadListSetting } from "@/components/settings/SidebarThreadListSetting";
+import { SidebarFooterSettings } from "@/components/settings/SidebarFooterSettings";
 import { SidebarNavigationSetting } from "@/components/settings/SidebarNavigationSetting";
 import { SplitDimmingSetting } from "@/components/settings/SplitDimmingSetting";
 import { useSettingsNavState } from "@/components/settings/settings-nav";
+import { PluginsOverview } from "@/components/plugin/PluginsOverview";
+import { PluginDetailPaneView } from "@/views/ToolsView";
+import { SETTINGS_PLUGIN_ROUTE_PATH } from "@/lib/route-paths";
 import { PluginSettingsPage } from "@/components/plugin/PluginSettings";
 import { FileOpenersSettingsSection } from "@/components/settings/FileOpenersSettingsSection";
 import { VoiceInputSettingsSection } from "@/components/settings/VoiceInputSettingsSection";
@@ -152,8 +166,8 @@ interface AppearanceSettingsSectionProps {
 
 interface GeneralSettingsSectionProps {
   desktopBrowserAvailable: boolean;
+  generalSettingsDisabled: boolean;
   managedBranchPrefix: string;
-  managedBranchPrefixDisabled: boolean;
   navigateToThreadAfterCreate: boolean;
   onManagedBranchPrefixChange: (prefix: string) => Promise<void> | void;
   onNavigateToThreadAfterCreateChange: (enabled: boolean) => void;
@@ -166,9 +180,7 @@ interface GeneralSettingsSectionProps {
   rewriteLocalhostLinks: boolean;
   richTextEditing: boolean;
   steerActiveThreadOnEnter: boolean;
-  steerActiveThreadOnEnterDisabled: boolean;
   streamerMode: boolean;
-  streamerModeDisabled: boolean;
 }
 
 interface DebugSettingsSectionProps {
@@ -191,16 +203,8 @@ function appPaletteLabel(
 
 interface ExperimentsSettingsSectionProps {
   disabled: boolean;
-  changelogPreviewEnabled: boolean;
-  editMessagesEnabled: boolean;
-  mobileAppEnabled: boolean;
-  sidebarProgressiveDisclosureEnabled: boolean;
-  timelineWindowingEnabled: boolean;
-  onChangelogPreviewEnabledChange: (enabled: boolean) => void;
-  onEditMessagesEnabledChange: (enabled: boolean) => void;
-  onMobileAppEnabledChange: (enabled: boolean) => void;
-  onSidebarProgressiveDisclosureEnabledChange: (enabled: boolean) => void;
-  onTimelineWindowingEnabledChange: (enabled: boolean) => void;
+  experiments: Experiments;
+  onExperimentChange: (key: ExperimentKey, enabled: boolean) => void;
 }
 
 const THEME_PREFERENCE_OPTIONS: ReadonlyArray<ThemePreferenceOption> = [
@@ -581,13 +585,13 @@ const FOLLOW_UP_BEHAVIOR_OPTIONS = [
     steerOnEnter: false,
     label: "Queue",
     description:
-      "Enter adds a follow-up. It runs when the agent stops. Command+Enter steers the run.",
+      "Enter adds a follow-up. It runs when the agent stops. Command+Enter (Ctrl+Enter on Windows and Linux) steers the run.",
   },
   {
     steerOnEnter: true,
     label: "Steer",
     description:
-      "Enter steers the run now. Command+Enter adds a follow-up for later.",
+      "Enter steers the run now. Command+Enter (Ctrl+Enter on Windows and Linux) adds a follow-up for later.",
   },
 ] as const;
 const STREAMER_MODE_SETTING_LABEL = "Streamer mode";
@@ -823,6 +827,7 @@ export function AppearanceSettingsSection({
           onFaviconColorChange={onFaviconColorChange}
         />
         <SplitDimmingSetting />
+        <SidebarFooterSettings />
       </div>
     </SettingsSection>
   );
@@ -830,8 +835,8 @@ export function AppearanceSettingsSection({
 
 export function GeneralSettingsSection({
   desktopBrowserAvailable,
+  generalSettingsDisabled,
   managedBranchPrefix,
-  managedBranchPrefixDisabled,
   navigateToThreadAfterCreate,
   onManagedBranchPrefixChange,
   onNavigateToThreadAfterCreateChange,
@@ -844,9 +849,7 @@ export function GeneralSettingsSection({
   rewriteLocalhostLinks,
   richTextEditing,
   steerActiveThreadOnEnter,
-  steerActiveThreadOnEnterDisabled,
   streamerMode,
-  streamerModeDisabled,
 }: GeneralSettingsSectionProps) {
   return (
     <SettingsSection title="General">
@@ -879,7 +882,7 @@ export function GeneralSettingsSection({
                 variant="outline"
                 size="sm"
                 className={SETTINGS_DROPDOWN_TRIGGER_CLASS}
-                disabled={steerActiveThreadOnEnterDisabled}
+                disabled={generalSettingsDisabled}
                 aria-label={FOLLOW_UP_BEHAVIOR_SETTING_LABEL}
               >
                 {steerActiveThreadOnEnter ? "Steer" : "Queue"}
@@ -948,7 +951,7 @@ export function GeneralSettingsSection({
 
         <ManagedBranchPrefixSetting
           value={managedBranchPrefix}
-          disabled={managedBranchPrefixDisabled}
+          disabled={generalSettingsDisabled}
           onChange={onManagedBranchPrefixChange}
         />
 
@@ -958,7 +961,7 @@ export function GeneralSettingsSection({
         >
           <Switch
             checked={streamerMode}
-            disabled={streamerModeDisabled}
+            disabled={generalSettingsDisabled}
             onCheckedChange={onStreamerModeChange}
             aria-label={STREAMER_MODE_SETTING_LABEL}
           />
@@ -990,24 +993,36 @@ export function DebugSettingsSection({
   );
 }
 
-const CHANGELOG_PREVIEW_EXPERIMENT_LABEL = "Changelog preview";
-const EDIT_MESSAGES_EXPERIMENT_LABEL = "Edit messages";
-const MOBILE_APP_EXPERIMENT_LABEL = "Mobile app";
-const SIDEBAR_PROGRESSIVE_DISCLOSURE_EXPERIMENT_LABEL =
-  "Sidebar progressive disclosure";
-const TIMELINE_WINDOWING_EXPERIMENT_LABEL = "Timeline windowing";
+const EXPERIMENT_DEFINITIONS: Record<
+  ExperimentKey,
+  { label: string; description: string }
+> = {
+  changelogPreview: {
+    label: "Changelog preview",
+    description:
+      "Show the latest release notes as a compact preview on the Updates page.",
+  },
+  mobileApp: {
+    label: "Mobile app",
+    description:
+      "Pair the bb mobile app over bb connect: shows Add mobile device under Remote access and enables bb connect machine-code.",
+  },
+  sidebarProgressiveDisclosure: {
+    label: "Sidebar progressive disclosure",
+    description:
+      "In By project and By machine, show the first five groups in the current sort order, keep attention groups visible, and reveal ten more per click. Manually is unchanged.",
+  },
+  timelineWindowing: {
+    label: "Timeline windowing",
+    description:
+      "Mount only nearby rows in long timelines and expanded timeline details.",
+  },
+};
+
 export function ExperimentsSettingsSection({
-  changelogPreviewEnabled,
   disabled,
-  editMessagesEnabled,
-  mobileAppEnabled,
-  sidebarProgressiveDisclosureEnabled,
-  timelineWindowingEnabled,
-  onChangelogPreviewEnabledChange,
-  onEditMessagesEnabledChange,
-  onMobileAppEnabledChange,
-  onSidebarProgressiveDisclosureEnabledChange,
-  onTimelineWindowingEnabledChange,
+  experiments,
+  onExperimentChange,
 }: ExperimentsSettingsSectionProps) {
   return (
     <SettingsSection
@@ -1015,65 +1030,25 @@ export function ExperimentsSettingsSection({
       description="Early features that are off by default. Opt in to try them."
     >
       <div className="space-y-5">
-        <SettingsWithControl
-          label={CHANGELOG_PREVIEW_EXPERIMENT_LABEL}
-          description="Show the latest release notes as a compact preview on the Updates page."
-        >
-          <Switch
-            checked={changelogPreviewEnabled}
-            disabled={disabled}
-            onCheckedChange={onChangelogPreviewEnabledChange}
-            aria-label={CHANGELOG_PREVIEW_EXPERIMENT_LABEL}
-          />
-        </SettingsWithControl>
-
-        <SettingsWithControl
-          label={EDIT_MESSAGES_EXPERIMENT_LABEL}
-          description="Edit a sent message and replace the conversation from that point. Workspace changes are kept."
-        >
-          <Switch
-            checked={editMessagesEnabled}
-            disabled={disabled}
-            onCheckedChange={onEditMessagesEnabledChange}
-            aria-label={EDIT_MESSAGES_EXPERIMENT_LABEL}
-          />
-        </SettingsWithControl>
-
-        <SettingsWithControl
-          label={MOBILE_APP_EXPERIMENT_LABEL}
-          description="Pair the bb mobile app over bb connect: shows Add mobile device under Remote access and enables bb connect machine-code."
-        >
-          <Switch
-            checked={mobileAppEnabled}
-            disabled={disabled}
-            onCheckedChange={onMobileAppEnabledChange}
-            aria-label={MOBILE_APP_EXPERIMENT_LABEL}
-          />
-        </SettingsWithControl>
-
-        <SettingsWithControl
-          label={SIDEBAR_PROGRESSIVE_DISCLOSURE_EXPERIMENT_LABEL}
-          description="In By project and By machine, show the first five groups in the current sort order, keep attention groups visible, and reveal ten more per click. Manually is unchanged."
-        >
-          <Switch
-            checked={sidebarProgressiveDisclosureEnabled}
-            disabled={disabled}
-            onCheckedChange={onSidebarProgressiveDisclosureEnabledChange}
-            aria-label={SIDEBAR_PROGRESSIVE_DISCLOSURE_EXPERIMENT_LABEL}
-          />
-        </SettingsWithControl>
-
-        <SettingsWithControl
-          label={TIMELINE_WINDOWING_EXPERIMENT_LABEL}
-          description="Mount only nearby rows in long timelines and expanded timeline details."
-        >
-          <Switch
-            checked={timelineWindowingEnabled}
-            disabled={disabled}
-            onCheckedChange={onTimelineWindowingEnabledChange}
-            aria-label={TIMELINE_WINDOWING_EXPERIMENT_LABEL}
-          />
-        </SettingsWithControl>
+        {experimentKeys.map((experimentKey) => {
+          const definition = EXPERIMENT_DEFINITIONS[experimentKey];
+          return (
+            <SettingsWithControl
+              key={experimentKey}
+              label={definition.label}
+              description={definition.description}
+            >
+              <Switch
+                checked={experiments[experimentKey]}
+                disabled={disabled}
+                onCheckedChange={(enabled) =>
+                  onExperimentChange(experimentKey, enabled)
+                }
+                aria-label={definition.label}
+              />
+            </SettingsWithControl>
+          );
+        })}
       </div>
     </SettingsSection>
   );
@@ -1108,10 +1083,27 @@ export function SettingsView() {
   const appearance = systemConfigQuery.data?.appearance ?? defaultAppTheme;
   const updateAppearanceMutation = useUpdateAppearance();
   const appThemePreview = useAppThemePreview();
+  const location = useLocation();
   const { activePluginId, activeSection, hasUnknownSection } =
     useSettingsNavState();
   if (hasUnknownSection) {
     return <Navigate to={SETTINGS_ROUTE_PATH} replace />;
+  }
+
+  if (activeSection === "plugins") {
+    const pluginId = matchPath(SETTINGS_PLUGIN_ROUTE_PATH, location.pathname)
+      ?.params.pluginId;
+    return (
+      <div className="-mx-4 -mt-4 flex min-h-0 flex-1 flex-col overflow-hidden md:-mx-5 md:-mt-5">
+        {pluginId ? (
+          <PluginDetailPaneView pluginId={pluginId} />
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col pt-4 md:pt-5">
+            <PluginsOverview mode="installed" />
+          </div>
+        )}
+      </div>
+    );
   }
 
   let content: ReactNode = null;
@@ -1195,7 +1187,26 @@ export function SettingsView() {
   } else if (activeSection === "projects") {
     content = <ProjectsSettingsSection />;
   } else if (activeSection === "machines") {
-    content = <MachinesSettingsSection />;
+    content = (
+      <>
+        <MachinesSettingsSection />
+        <MachineAccessSettings />
+        <details
+          id="advanced-machine-settings"
+          open={location.hash === "#advanced-machine-settings" || undefined}
+          className="group space-y-6"
+        >
+          <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-subtle-foreground [&::-webkit-details-marker]:hidden">
+            Advanced settings
+            <Icon
+              name="ChevronRight"
+              className="size-3.5 transition-transform group-open:rotate-90"
+            />
+          </summary>
+          <MachineEnvironmentSettings />
+        </details>
+      </>
+    );
   } else if (activeSection === "updates") {
     content = (
       <UpdatesSettingsSection
@@ -1205,46 +1216,13 @@ export function SettingsView() {
   } else if (activeSection === "experiments") {
     content = (
       <ExperimentsSettingsSection
-        changelogPreviewEnabled={experiments.changelogPreview}
         disabled={
           systemConfigQuery.data === undefined ||
           updateExperimentsMutation.isPending
         }
-        onChangelogPreviewEnabledChange={(enabled) =>
-          updateExperimentsMutation.mutate({
-            ...experiments,
-            changelogPreview: enabled,
-          })
-        }
-        editMessagesEnabled={experiments.editMessages}
-        onEditMessagesEnabledChange={(enabled) =>
-          updateExperimentsMutation.mutate({
-            ...experiments,
-            editMessages: enabled,
-          })
-        }
-        mobileAppEnabled={experiments.mobileApp}
-        onMobileAppEnabledChange={(enabled) =>
-          updateExperimentsMutation.mutate({
-            ...experiments,
-            mobileApp: enabled,
-          })
-        }
-        sidebarProgressiveDisclosureEnabled={
-          experiments.sidebarProgressiveDisclosure
-        }
-        onSidebarProgressiveDisclosureEnabledChange={(enabled) =>
-          updateExperimentsMutation.mutate({
-            ...experiments,
-            sidebarProgressiveDisclosure: enabled,
-          })
-        }
-        timelineWindowingEnabled={experiments.timelineWindowing}
-        onTimelineWindowingEnabledChange={(enabled) =>
-          updateExperimentsMutation.mutate({
-            ...experiments,
-            timelineWindowing: enabled,
-          })
+        experiments={experiments}
+        onExperimentChange={(key, enabled) =>
+          updateExperimentsMutation.mutate({ ...experiments, [key]: enabled })
         }
       />
     );
@@ -1259,11 +1237,11 @@ export function SettingsView() {
       <>
         <GeneralSettingsSection
           desktopBrowserAvailable={desktopBrowserAvailable}
-          managedBranchPrefix={generalSettings.managedBranchPrefix}
-          managedBranchPrefixDisabled={
+          generalSettingsDisabled={
             systemConfigQuery.data === undefined ||
             updateGeneralSettingsMutation.isPending
           }
+          managedBranchPrefix={generalSettings.managedBranchPrefix}
           onManagedBranchPrefixChange={async (prefix) => {
             await updateGeneralSettingsMutation.mutateAsync({
               ...generalSettings,
@@ -1275,10 +1253,6 @@ export function SettingsView() {
           rewriteLocalhostLinks={rewriteLocalhostLinks}
           richTextEditing={richTextEditing}
           steerActiveThreadOnEnter={generalSettings.steerActiveThreadOnEnter}
-          steerActiveThreadOnEnterDisabled={
-            systemConfigQuery.data === undefined ||
-            updateGeneralSettingsMutation.isPending
-          }
           onNavigateToThreadAfterCreateChange={setNavigateToThreadAfterCreate}
           onOpenLinksInAppBrowserChange={setOpenLinksInAppBrowser}
           onRewriteLocalhostLinksChange={setRewriteLocalhostLinks}
@@ -1290,10 +1264,6 @@ export function SettingsView() {
             })
           }
           streamerMode={generalSettings.streamerMode}
-          streamerModeDisabled={
-            systemConfigQuery.data === undefined ||
-            updateGeneralSettingsMutation.isPending
-          }
           onStreamerModeChange={(enabled) =>
             updateGeneralSettingsMutation.mutate({
               ...generalSettings,

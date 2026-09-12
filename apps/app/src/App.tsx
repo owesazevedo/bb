@@ -60,10 +60,8 @@ import {
   getAutomationDetailRoutePath,
   getAutomationEditRoutePath,
   getAutomationsRoutePath,
-  getPluginDetailRoutePath,
   getSettingsRoutePath,
   getSettingsProjectRoutePath,
-  isLegacyInstalledPluginsRoute,
 } from "./lib/route-paths";
 import { AppCommandProvider } from "./components/commands/AppCommandProvider";
 import { ProviderCliInstallLogDialogHost } from "./components/provider-cli/provider-cli-install";
@@ -98,19 +96,25 @@ const splitWorkspaceRouteModule = import("./views/SplitWorkspaceRoute");
 splitWorkspaceRouteModule.catch(() => {});
 const SplitWorkspaceRoute = lazy(() => splitWorkspaceRouteModule);
 
-function LegacyProjectSettingsRedirect() {
-  const { projectId } = useParams<{ projectId: string }>();
-  const { search, hash } = useLocation();
+function NavigatePreservingLocation({ pathname }: { pathname: string }) {
+  const location = useLocation();
   return (
     <Navigate
-      to={{
-        pathname: projectId
-          ? getSettingsProjectRoutePath(projectId)
-          : getSettingsRoutePath("projects"),
-        search,
-        hash,
-      }}
+      to={{ pathname, search: location.search, hash: location.hash }}
       replace
+    />
+  );
+}
+
+function LegacyProjectSettingsRedirect() {
+  const { projectId } = useParams<{ projectId: string }>();
+  return (
+    <NavigatePreservingLocation
+      pathname={
+        projectId
+          ? getSettingsProjectRoutePath(projectId)
+          : getSettingsRoutePath("projects")
+      }
     />
   );
 }
@@ -154,48 +158,6 @@ export function LegacyAutomationCollectionRedirect() {
   );
 }
 
-export function PluginsLandingRedirect() {
-  const location = useLocation();
-  return (
-    <Navigate
-      to={{
-        pathname: PLUGINS_ROUTE_PATH,
-        search: location.search,
-        hash: location.hash,
-      }}
-      replace
-    />
-  );
-}
-
-export function LegacyInstalledPluginsRedirect() {
-  const { pluginId } = useParams<{ pluginId?: string }>();
-  const { search, hash } = useLocation();
-  const searchParams = new URLSearchParams(search);
-  searchParams.set("view", "installed");
-  return (
-    <Navigate
-      to={{
-        pathname: pluginId
-          ? getPluginDetailRoutePath({ pluginId })
-          : PLUGINS_ROUTE_PATH,
-        search: `?${searchParams.toString()}`,
-        hash,
-      }}
-      replace
-    />
-  );
-}
-
-function PluginSettingsRoute() {
-  const location = useLocation();
-  return isLegacyInstalledPluginsRoute(location) ? (
-    <LegacyInstalledPluginsRedirect />
-  ) : (
-    <SettingsView />
-  );
-}
-
 function normalizeLegacyPluginSuffix(suffix: string): string {
   return matchPath("/browse", suffix) !== null ? "" : suffix;
 }
@@ -206,14 +168,7 @@ export function LegacyPluginsPathRedirect() {
     location.pathname.slice(TOOLS_PLUGINS_ROUTE_PATH.length),
   );
   return (
-    <Navigate
-      to={{
-        pathname: `${PLUGINS_ROUTE_PATH}${suffix}`,
-        search: location.search,
-        hash: location.hash,
-      }}
-      replace
-    />
+    <NavigatePreservingLocation pathname={`${PLUGINS_ROUTE_PATH}${suffix}`} />
   );
 }
 
@@ -231,14 +186,7 @@ export function LegacySkillsPathRedirect() {
     location.pathname.slice(TOOLS_SKILLS_ROUTE_PATH.length),
   );
   return (
-    <Navigate
-      to={{
-        pathname: `${SKILLS_ROUTE_PATH}${suffix}`,
-        search: location.search,
-        hash: location.hash,
-      }}
-      replace
-    />
+    <NavigatePreservingLocation pathname={`${SKILLS_ROUTE_PATH}${suffix}`} />
   );
 }
 
@@ -256,16 +204,7 @@ export function LegacyToolsPathRedirect() {
       : suffix === "" || suffix === "/"
         ? PLUGINS_ROUTE_PATH
         : `${TOOLS_ROUTE_PATH}${suffix}`;
-  return (
-    <Navigate
-      to={{
-        pathname,
-        search: location.search,
-        hash: location.hash,
-      }}
-      replace
-    />
-  );
+  return <NavigatePreservingLocation pathname={pathname} />;
 }
 
 function hashTargetId(hash: string): string | null {
@@ -332,12 +271,9 @@ export function AppRoutes() {
           />
           <Route
             path={SETTINGS_PLUGINS_ROUTE_PATH}
-            element={<LegacyInstalledPluginsRedirect />}
+            element={<SettingsView />}
           />
-          <Route
-            path={SETTINGS_PLUGIN_ROUTE_PATH}
-            element={<PluginSettingsRoute />}
-          />
+          <Route path={SETTINGS_PLUGIN_ROUTE_PATH} element={<SettingsView />} />
           <Route
             path={SETTINGS_MACHINE_ROUTE_PATH}
             element={<MachineSettingsView />}
@@ -382,7 +318,12 @@ export function AppRoutes() {
             path={LEGACY_AUTOMATION_DETAIL_ROUTE_PATH}
             element={<LegacyAutomationDetailRedirect />}
           />
-          <Route path={TOOLS_ROUTE_PATH} element={<PluginsLandingRedirect />} />
+          <Route
+            path={TOOLS_ROUTE_PATH}
+            element={
+              <NavigatePreservingLocation pathname={PLUGINS_ROUTE_PATH} />
+            }
+          />
           <Route
             path={TOOLS_PLUGINS_ROUTE_PATH}
             element={<LegacyPluginsPathRedirect />}
@@ -486,7 +427,6 @@ export function App() {
                 />
                 <Route path="*" element={<AppRoutes />} />
               </Routes>
-              {}
               <ProviderCliInstallLogDialogHost />
             </AppFileExternalNavigationHost>
           </AppNavigationUrlHost>

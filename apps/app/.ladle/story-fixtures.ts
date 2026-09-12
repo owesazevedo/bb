@@ -103,8 +103,10 @@ export function makeAttachmentsConfig(
 }
 
 function storyProviderIcon(providerId: string, glyph: string) {
-  return getProviderIconInfo(providerId, { logoUrl: null, icon: { glyph } })
-    ?.icon;
+  return getProviderIconInfo("agent", providerId, {
+    logoUrl: null,
+    icon: { glyph },
+  })?.icon;
 }
 
 function makeStoryProvider(
@@ -323,12 +325,15 @@ export const STORY_WORKTREE_OPTIONS: readonly ReuseThreadOption[] = [
 export const STORY_ENVIRONMENT_PROVIDERS: readonly SystemEnvironmentProvider[] =
   [
     {
+      machineProviderId: null,
       id: "project-checkout",
       displayName: "Project checkout",
+      description: "Work in this project checkout.",
       icon: "Laptop",
       logoUrl: null,
       pluginId: "environment-project-checkout",
       acceptsEmptyInputs: true,
+      machineAvailability: {},
       availability: null,
       requires: {
         projectCheckout: true,
@@ -339,12 +344,15 @@ export const STORY_ENVIRONMENT_PROVIDERS: readonly SystemEnvironmentProvider[] =
       inputs: null,
     },
     {
+      machineProviderId: null,
       id: "git-worktree",
       displayName: "Worktree",
-      icon: "GitBranch",
+      description: "Create an isolated Git worktree.",
+      icon: "FolderGit",
       logoUrl: null,
       pluginId: "environment-git-worktree",
       acceptsEmptyInputs: true,
+      machineAvailability: {},
       availability: null,
       requires: {
         projectCheckout: true,
@@ -355,12 +363,15 @@ export const STORY_ENVIRONMENT_PROVIDERS: readonly SystemEnvironmentProvider[] =
       inputs: null,
     },
     {
+      machineProviderId: null,
       id: "personal-workspace",
       displayName: "Personal workspace",
+      description: "Create a personal directory without a project.",
       icon: "Folder",
       logoUrl: null,
       pluginId: "environment-personal-workspace",
       acceptsEmptyInputs: true,
+      machineAvailability: {},
       availability: null,
       requires: {
         projectCheckout: false,

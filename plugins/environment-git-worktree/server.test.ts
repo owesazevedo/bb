@@ -66,7 +66,7 @@ async function setup(
     thread: makeThreadResponse({ id: THREAD_ID, projectId: PROJECT_ID }),
     project: PROJECT,
     host: PROVISION_HOST,
-    projectCheckout: { path: SOURCE_PATH },
+    projectCheckout: { experimental_ownsPath: false, path: SOURCE_PATH },
     gitRemote: null,
     inputs: { branch: { kind: "default" } },
     suggestedBranchName: "bb/test",
@@ -202,11 +202,11 @@ describe("worktree resource operations", () => {
     await expect(creating).resolves.toMatchObject({ status: "created" });
   });
 
-  it("maps host failures to terminal results and transport failures to transient results", async () => {
+  it("returns terminal creation failures for host and transport errors", async () => {
     const failed = await setup(() => ({ status: "failed", message: "dirty" }));
     await expect(failed.provider.create(failed.context)).resolves.toEqual({
       status: "failed",
-      failure: "terminal",
+
       message: "dirty",
     });
     const offline = await setup(() => {
@@ -214,7 +214,7 @@ describe("worktree resource operations", () => {
     });
     await expect(offline.provider.create(offline.context)).resolves.toEqual({
       status: "failed",
-      failure: "transient",
+
       message: "offline",
     });
   });

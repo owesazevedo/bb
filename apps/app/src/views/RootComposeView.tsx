@@ -186,6 +186,10 @@ import {
   useAppCommandShortcut,
 } from "@/components/commands/AppCommandProvider";
 import { useOptionalPaneContext } from "./thread-detail/PaneContext";
+import {
+  PluginDetailPanelContext,
+  usePluginDetailPanelState,
+} from "@/components/plugin/plugin-detail-navigation";
 import { RootComposePanelCommandHandlers } from "./RootComposePanelCommandHandlers";
 import {
   ROOT_COMPOSE_FIXED_PANEL_STATE_ID,
@@ -655,6 +659,10 @@ function RootComposeSurface({
 }: RootComposeSurfaceProps) {
   const paneContext = useOptionalPaneContext();
   const isFocusedPane = paneContext?.isFocused ?? true;
+  const pluginDetails = usePluginDetailPanelState(
+    ROOT_COMPOSE_FIXED_PANEL_STATE_ID,
+    isFocusedPane,
+  );
   const location = useLocation();
   const navigate = useNavigate();
   const isPointerCoarse = usePointerCoarse();
@@ -674,7 +682,7 @@ function RootComposeSurface({
     panelThreadId: rootPanelThreadId,
     selectedProviderId,
     promptDraft,
-    promptBoxRef,
+    focusPromptBox,
     pluginComposerHost: sharedPluginComposerHost,
     textEffects: promptTextEffects,
     isSubmitting,
@@ -705,17 +713,17 @@ function RootComposeSurface({
     () =>
       subscribeComposerFocusRequests(promptDraft.storageKey, () => {
         setStartedComposing(true);
-        window.requestAnimationFrame(() => promptBoxRef.current?.focusEnd());
+        window.requestAnimationFrame(focusPromptBox);
       }),
-    [promptBoxRef, promptDraft.storageKey, setStartedComposing],
+    [focusPromptBox, promptDraft.storageKey, setStartedComposing],
   );
   const handleRootPanelSelectionAddToChat = useCallback(
     (text: string, attachments?: readonly PromptDraftAttachment[]) => {
       promptDraft.addQuote(text, attachments);
       setStartedComposing(true);
-      window.requestAnimationFrame(() => promptBoxRef.current?.focusEnd());
+      window.requestAnimationFrame(focusPromptBox);
     },
-    [promptBoxRef, promptDraft, setStartedComposing],
+    [focusPromptBox, promptDraft, setStartedComposing],
   );
   const handleRootPanelMarkdownGrab = useCallback(
     (result: MarkdownGrabSelectedResult) => {
@@ -839,11 +847,9 @@ function RootComposeSurface({
     location.state.focusPrompt === true;
   useEffect(() => {
     if (!shouldFocusPrompt || isPointerCoarse) return;
-    const handle = window.requestAnimationFrame(() => {
-      promptBoxRef.current?.focusEnd();
-    });
+    const handle = window.requestAnimationFrame(focusPromptBox);
     return () => window.cancelAnimationFrame(handle);
-  }, [isPointerCoarse, location.key, promptBoxRef, shouldFocusPrompt]);
+  }, [focusPromptBox, isPointerCoarse, location.key, shouldFocusPrompt]);
 
   const mobileRecentThreads = useMemo(
     () => buildMobileRecentThreads({ sidebarNavigation }),
@@ -926,9 +932,11 @@ function RootComposeSurface({
       isCompactViewport,
       threadId: ROOT_COMPOSE_FIXED_PANEL_STATE_ID,
     });
-  const isSecondaryPanelOpen = isCompactViewport
+  const isWorkspacePanelOpen = isCompactViewport
     ? secondaryPanelDrawerVisibility.isDrawerVisible
     : isPersistedSecondaryPanelOpen;
+  const isSecondaryPanelOpen =
+    isWorkspacePanelOpen || pluginDetails.activePluginId !== null;
   const touchFixedPanelTabsState = useTouchFixedPanelTabsState(
     ROOT_COMPOSE_FIXED_PANEL_STATE_ID,
     null,
@@ -1154,7 +1162,7 @@ function RootComposeSurface({
     openTab({ kind: "new-tab" });
   }, [closeRootSecondaryPanel, isPersistedSecondaryPanelOpen, openTab]);
   const {
-    closePanel: closeSecondaryPanel,
+    closePanel: closeWorkspacePanel,
     openCompactDrawer,
     openHostFile,
     openStorageFile,
@@ -1173,6 +1181,11 @@ function RootComposeSurface({
     openPersistedWorkspaceFile,
     togglePersistedPanel: toggleRootPersistedSecondaryPanel,
   });
+  const dismissPluginDetails = pluginDetails.dismiss;
+  const closeSecondaryPanel = useCallback(() => {
+    dismissPluginDetails();
+    closeWorkspacePanel();
+  }, [dismissPluginDetails, closeWorkspacePanel]);
   const handleOpenLiveFilePreview = useCallback(
     (intent: AppFilePreviewIntent): boolean => {
       const normalized = normalizeAppFilePreviewIntent(intent);
@@ -1515,6 +1528,10 @@ function RootComposeSurface({
     ],
   );
   const handleCloseWindowRequest = useCallback(() => {
+    if (pluginDetails.activePluginId !== null) {
+      pluginDetails.close(pluginDetails.activePluginId);
+      return true;
+    }
     if (!isSecondaryPanelOpen) {
       return false;
     }
@@ -1537,6 +1554,7 @@ function RootComposeSurface({
     closeTab,
     handleCloseTerminalTab,
     isSecondaryPanelOpen,
+    pluginDetails,
   ]);
   const [openLinksInAppBrowser] = useOpenLinksInAppBrowserPreference();
   const desktopBrowserAvailable = isDesktopBrowserAvailable();
@@ -1803,14 +1821,12 @@ function RootComposeSurface({
     if (!startedComposing) return;
     if (isProviderCliVersionBlocked) return;
     if (isPointerCoarse) return;
-    const handle = window.requestAnimationFrame(() => {
-      promptBoxRef.current?.focusEnd();
-    });
+    const handle = window.requestAnimationFrame(focusPromptBox);
     return () => window.cancelAnimationFrame(handle);
   }, [
     isProviderCliVersionBlocked,
     isPointerCoarse,
-    promptBoxRef,
+    focusPromptBox,
     startedComposing,
   ]);
   const [machineSetupTarget, setMachineSetupTarget] =
@@ -1849,10 +1865,8 @@ function RootComposeSurface({
   );
   const handleCancelForkDraft = useCallback(() => {
     setForkSeed(null);
-    window.requestAnimationFrame(() => {
-      promptBoxRef.current?.focusEnd();
-    });
-  }, [promptBoxRef, setForkSeed]);
+    window.requestAnimationFrame(focusPromptBox);
+  }, [focusPromptBox, setForkSeed]);
 
   const promptHeader = useMemo(() => {
     if (forkSeed === null) {
@@ -1860,7 +1874,6 @@ function RootComposeSurface({
     }
     return (
       <div className="flex">
-        {}
         <div
           aria-label={`Forking ${forkSeed.sourceThreadTitle}`}
           className="-ml-1.5 inline-flex h-7 max-w-full items-center gap-1.5 rounded-full bg-muted py-0 pl-2.5 pr-1 text-xs font-medium text-muted-foreground"
@@ -1964,7 +1977,7 @@ function RootComposeSurface({
   });
 
   return (
-    <>
+    <PluginDetailPanelContext.Provider value={pluginDetails}>
       <RootComposePanelCommandHandlers
         isFocused={isFocusedPane}
         onClose={handleCloseWindowRequest}
@@ -2039,6 +2052,6 @@ function RootComposeSurface({
           </AppNavigationHostProvider>
         </UrlOpenRoutingProvider>
       </PluginComposerHostProvider>
-    </>
+    </PluginDetailPanelContext.Provider>
   );
 }

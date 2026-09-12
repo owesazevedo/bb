@@ -2,6 +2,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Provider } from "jotai";
+import { TooltipProvider } from "@bb/shared-ui/tooltip";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SidebarProvider } from "@/components/ui/sidebar.js";
@@ -35,9 +36,11 @@ function renderGlyph(plugins: PluginListItem[]) {
   return render(
     <Provider>
       <MemoryRouter>
-        <SidebarProvider>
-          <SidebarPluginAttentionGlyph className="footer-action" />
-        </SidebarProvider>
+        <TooltipProvider delayDuration={300} disableHoverableContent>
+          <SidebarProvider>
+            <SidebarPluginAttentionGlyph className="footer-action" />
+          </SidebarProvider>
+        </TooltipProvider>
       </MemoryRouter>
     </Provider>,
   );
@@ -60,7 +63,7 @@ describe("SidebarPluginAttentionGlyph", () => {
     expect(el.getAttribute("aria-label")).toBe(
       "Notify is incompatible: requires bb >=0.38.0 <0.39.0, this is 0.39.0",
     );
-    expect(el.getAttribute("href")).toBe("/plugins?view=installed");
+    expect(el.getAttribute("href")).toBe("/settings/plugins");
     expect(el.className).toContain("text-warning-text");
     expect(el.querySelector('[data-icon="AlertTriangle"]')).not.toBeNull();
   });

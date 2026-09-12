@@ -35,6 +35,7 @@ const uiPreferenceStringListSchema = z
 export const UI_PREFERENCE_KEYS = [
   "sidebar.organizationMode",
   "sidebar.chronologicalSort",
+  "sidebar.sortDirection",
   "sidebar.sectionOrder",
   "sidebar.manualSectionOrder",
   "sidebar.machineSectionOrder",
@@ -44,6 +45,8 @@ export const UI_PREFERENCE_KEYS = [
   "sidebar.collapsedEnvironments",
   "sidebar.collapsedThreadSections",
   "sidebar.collapsedMachines",
+  "sidebar.footerOrder",
+  "sidebar.hiddenFooterItems",
   "sidebar.pluginPanelOrder",
   "sidebar.visiblePluginPanels",
   "sidebar.navigationProvider",
@@ -80,6 +83,11 @@ export const uiPreferenceDefinitions = {
     sidebarChronologicalSortSchema,
     "updated",
     "Sort order for the chronological sidebar organization.",
+  ),
+  "sidebar.sortDirection": defineUiPreference(
+    z.enum(["default", "ascending", "descending"]),
+    "default",
+    "Sidebar thread sort direction; default preserves the selected field's original direction.",
   ),
   "sidebar.sectionOrder": defineUiPreference(
     uiPreferenceStringListSchema,
@@ -127,6 +135,16 @@ export const uiPreferenceDefinitions = {
     uiPreferenceStringListSchema,
     [],
     "Machine ids whose sidebar rows are collapsed.",
+  ),
+  "sidebar.footerOrder": defineUiPreference(
+    uiPreferenceStringListSchema,
+    [],
+    "Order of built-in and plugin sidebar footer actions.",
+  ),
+  "sidebar.hiddenFooterItems": defineUiPreference(
+    uiPreferenceStringListSchema,
+    [],
+    "Sidebar footer actions moved into the More menu.",
   ),
   "sidebar.pluginPanelOrder": defineUiPreference(
     uiPreferenceStringListSchema,

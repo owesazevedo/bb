@@ -20,7 +20,11 @@ import { COMMAND_TIMEOUT_MS } from "../../constants.js";
 import { ApiError } from "../../errors.js";
 import { callHostRetryableOnlineRpc } from "../hosts/online-rpc.js";
 import { getHostPermissionCeiling } from "../hosts/permission-ceiling.js";
-import { requireEnvironment } from "../lib/entity-lookup.js";
+import {
+  requireConnectedHostSession,
+  requireEnvironment,
+} from "../lib/entity-lookup.js";
+import { isSuspendedHostUnavailableError } from "../lib/lifecycle-api-errors.js";
 import { createProviderListingBudget } from "../providers/native-roots.js";
 import type {
   ProviderHealthCacheKey,
@@ -201,9 +205,7 @@ async function listInstalledPluginProviderInfos(
                 bridgeLaunch,
               },
             });
-            return (
-              result.supported && result.health.status !== "not_installed"
-            );
+            return result.supported && result.health.status !== "not_installed";
           })();
         if (cached === undefined) {
           deps.providerRegistry.rememberInstalled(cacheKey, installed);
@@ -214,14 +216,16 @@ async function listInstalledPluginProviderInfos(
         if (!canOmitProviderDiscoveryForError(error)) {
           throw error;
         }
-        deps.logger.warn(
-          {
-            ...expectedFallbackErrorLogFields(error),
-            hostId,
-            providerId: registration.info.id,
-          },
-          "Failed to resolve installed-only provider status",
-        );
+        if (!isSuspendedHostUnavailableError(error)) {
+          deps.logger.warn(
+            {
+              ...expectedFallbackErrorLogFields(error),
+              hostId,
+              providerId: registration.info.id,
+            },
+            "Failed to resolve installed-only provider status",
+          );
+        }
         return null;
       }
     },
@@ -236,9 +240,20 @@ async function listSystemProviderInfosForHost(
   hostId: string,
   capability?: ProviderCapabilityFilter,
 ): Promise<ProviderInfo[]> {
-  return listConfiguredSystemProviderInfos(deps, capability).concat(
-    await listInstalledPluginProviderInfos(deps, hostId, capability),
+  const configured = listConfiguredSystemProviderInfos(deps, capability);
+  const installed = await listInstalledPluginProviderInfos(
+    deps,
+    hostId,
+    capability,
   );
+  const visibleIds = new Set([
+    ...configured.map((provider) => provider.id),
+    ...installed.map((provider) => provider.id),
+  ]);
+  return deps.providerRegistry
+    .list()
+    .filter((registration) => visibleIds.has(registration.info.id))
+    .map((registration) => registration.info);
 }
 
 function resolveSystemProviderInfosPlan(
@@ -247,6 +262,7 @@ function resolveSystemProviderInfosPlan(
 ): ResolveSystemProviderInfosPlanResult {
   try {
     const hostId = resolveSystemLookupHostId(deps, query);
+    requireConnectedHostSession(deps, hostId);
     return {
       hostId,
       hostLookupError: null,
@@ -260,10 +276,12 @@ function resolveSystemProviderInfosPlan(
     if (!canOmitProviderDiscoveryForError(error)) {
       throw error;
     }
-    deps.logger.warn(
-      expectedFallbackErrorLogFields(error),
-      "Failed to resolve host for provider discovery",
-    );
+    if (!isSuspendedHostUnavailableError(error)) {
+      deps.logger.warn(
+        expectedFallbackErrorLogFields(error),
+        "Failed to resolve host for provider discovery",
+      );
+    }
     return {
       hostId: null,
       hostLookupError: error,

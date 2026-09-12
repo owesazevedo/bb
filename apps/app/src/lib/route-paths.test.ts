@@ -18,7 +18,6 @@ import {
   isToolsRoutePath,
   LEGACY_AUTOMATION_DETAIL_ROUTE_PATH,
   LEGACY_AUTOMATIONS_ROUTE_PATH,
-  LEGACY_SKILLS_ROUTE_PATH,
   resolveRouteHref,
 } from "./route-paths";
 
@@ -94,7 +93,7 @@ describe("route path helpers", () => {
     );
     expect(
       getPluginDetailRoutePath({ pluginId: "github", view: "installed" }),
-    ).toBe("/plugins/github?view=installed");
+    ).toBe("/settings/plugins/github?view=installed");
     expect(getPluginConfigurationRoutePath({ pluginId: "github" })).toBe(
       "/settings/plugins/github",
     );
@@ -165,7 +164,6 @@ describe("route path helpers", () => {
   });
 
   it("preserves the Skills alias and legacy Automations paths", () => {
-    expect(LEGACY_SKILLS_ROUTE_PATH).toBe("/skills");
     expect(LEGACY_AUTOMATIONS_ROUTE_PATH).toBe("/automations");
     expect(LEGACY_AUTOMATION_DETAIL_ROUTE_PATH).toBe(
       "/automations/:projectId/:automationId",

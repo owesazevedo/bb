@@ -4,10 +4,12 @@ import {
   createQueuedThreadMessageId,
   createThreadSection,
   deleteQueuedThreadMessage,
-  deleteHost,
   environments,
   events,
+  getEnvironment,
+  getPreparingEnvironment,
   getQueuedThreadMessage,
+  hosts,
   insertEvents,
   listQueuedThreadMessages,
   getThread,
@@ -40,7 +42,6 @@ import { renderTemplate } from "@bb/templates";
 import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
 import type { TelemetryService } from "../../src/services/system/telemetry.js";
-import { loadActiveThreadProvisionContext } from "../../src/services/threads/thread-provisioning-environment.js";
 import {
   reportNextEnvironmentAttachSuccess,
   reportQueuedCommandError,
@@ -411,7 +412,7 @@ describe("public thread data routes", () => {
         environmentId: environment.id,
         projectId: project.id,
       });
-      deleteHost(harness.deps.db, harness.deps.hub, host.id);
+      harness.deps.db.delete(hosts).where(eq(hosts.id, host.id)).run();
 
       const noEnvironmentResponse = await harness.app.request(
         `/api/v1/threads/${threadWithoutEnvironment.id}?include=environment,host`,
@@ -1821,7 +1822,7 @@ describe("public thread data routes", () => {
       if (!turnRow) {
         throw new Error("Expected a turn row");
       }
-      expect(turnRow.sourceSeqStart).toBeGreaterThan(2);
+      expect(turnRow.sourceSeqStart).toBe(1);
 
       const detailsResponse = await harness.app.request(
         `/api/v1/threads/${thread.id}/timeline/turn-summary-details?turnId=${turnRow.turnId}&sourceSeqStart=${turnRow.sourceSeqStart}&sourceSeqEnd=${turnRow.sourceSeqEnd}`,
@@ -3697,10 +3698,16 @@ describe("public thread data routes", () => {
         sessionId: session.id,
         handle: (request): HostRpcHandlerResult => {
           if (request.command.type === "environment.attach") {
+            const currentThread = getThread(harness.db, thread.id);
             stateAtProvisionStart = {
               activeContextStage:
-                loadActiveThreadProvisionContext(harness.deps, thread.id)?.state
-                  .stage ?? null,
+                currentThread?.status !== "starting"
+                  ? "inactive"
+                  : (getPreparingEnvironment(harness.db, thread.id)?.status ??
+                    (currentThread.environmentId === null
+                      ? null
+                      : (getEnvironment(harness.db, currentThread.environmentId)
+                          ?.status ?? null))),
               queuedMessageExists:
                 getQueuedThreadMessage(harness.db, queuedMessage.id) !== null,
               requestEventCount: harness.db
@@ -3763,7 +3770,7 @@ describe("public thread data routes", () => {
       expect(sendResponse.status, await sendResponse.clone().text()).toBe(200);
       await vi.waitFor(() =>
         expect(stateAtProvisionStart).toEqual({
-          activeContextStage: "environment-provisioning",
+          activeContextStage: "provisioning",
           queuedMessageExists: false,
           requestEventCount: 1,
         }),

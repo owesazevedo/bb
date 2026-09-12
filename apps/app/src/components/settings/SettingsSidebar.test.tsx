@@ -28,7 +28,6 @@ function renderSidebar(activePluginId: string | null = null) {
             sections: SETTINGS_NAV_SECTIONS,
           }}
           onResizeMouseDown={() => {}}
-          showTopReserve={false}
         />
       </SidebarProvider>
     </MemoryRouter>,
@@ -38,11 +37,13 @@ function renderSidebar(activePluginId: string | null = null) {
 afterEach(cleanup);
 
 describe("SettingsSidebarContent plugin navigation", () => {
-  it("offers configurable plugin settings without installed-plugin management", () => {
+  it("offers installed-plugin management and configurable plugin settings", () => {
     renderSidebar();
     expect(
-      screen.queryByRole("link", { name: "Installed plugins" }),
-    ).toBeNull();
+      screen
+        .getByRole("link", { name: "Installed plugins" })
+        .getAttribute("href"),
+    ).toBe("/settings/plugins");
     expect(
       screen.getByRole("link", { name: "Linear" }).getAttribute("href"),
     ).toBe("/settings/plugins/linear");

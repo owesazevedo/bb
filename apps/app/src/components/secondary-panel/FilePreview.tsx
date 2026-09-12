@@ -3,11 +3,11 @@ import {
   type CSSProperties,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import type { UrlTransform } from "react-markdown";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Button } from "@bb/shared-ui/button";
 import {
@@ -49,6 +49,7 @@ import {
   type MarkdownGrabSelectedResult,
 } from "@/lib/markdown-grab-quote";
 import { SecondaryPanelSelectionActions } from "./SecondaryPanelSelectionActions.js";
+import { useImageTabLightbox } from "./ImageTabLightboxContext.js";
 
 export interface FilePreviewFile {
   cacheKey?: string;
@@ -59,12 +60,12 @@ export interface FilePreviewFile {
 type IframePreviewSandbox = "allow-scripts";
 
 interface IframeFilePreviewTarget {
-  sandbox: IframePreviewSandbox | null;
+  sandbox: IframePreviewSandbox;
   title: string;
   url: string;
 }
 
-type FilePreviewState =
+export type FilePreviewState =
   | { kind: "loading" }
   | { kind: "empty" }
   | { kind: "not-found" }
@@ -83,7 +84,6 @@ type FilePreviewState =
       file: FilePreviewFile;
       lineRange: FilePreviewLineRange | null;
       textPreviewKind: TextFilePreviewKind | null;
-      markdownUrlTransform?: UrlTransform;
     };
 
 export type MarkdownFileSaveHandler = (args: {
@@ -159,7 +159,6 @@ interface FilePreviewPathProps {
 interface MarkdownFilePreviewProps {
   file: FilePreviewFile;
   onSelectionAddToChat?: (text: string) => void;
-  urlTransform?: UrlTransform;
   markdownLinkRouting?: MarkdownLinkRouting;
 }
 
@@ -711,7 +710,6 @@ function FilePreviewBody({
     return (
       <MarkdownFilePreview
         file={state.file}
-        urlTransform={state.markdownUrlTransform}
         markdownLinkRouting={markdownLinkRouting}
         onSelectionAddToChat={onSelectionAddToChat}
       />
@@ -841,7 +839,6 @@ function FilePreviewHeader({
                     }}
                     aria-label="Open in external browser"
                   >
-                    {}
                     <Icon name="Globe" aria-hidden />
                   </Button>
                 </TooltipTrigger>
@@ -1070,7 +1067,6 @@ function HtmlFilePreviewBody({
 function MarkdownFilePreview({
   file,
   onSelectionAddToChat,
-  urlTransform,
   markdownLinkRouting,
 }: MarkdownFilePreviewProps) {
   return (
@@ -1080,7 +1076,6 @@ function MarkdownFilePreview({
           allowHtml
           className="bb-md-note"
           content={file.contents}
-          urlTransform={urlTransform}
           linkRouting={markdownLinkRouting}
           variant="document"
         />
@@ -1134,9 +1129,7 @@ function CsvFilePreview({ file, onSelectionAddToChat }: CsvFilePreviewProps) {
 
   return (
     <SecondaryPanelSelectionActions onSelectionAddToChat={onSelectionAddToChat}>
-      {}
       <div className="flex min-h-0 flex-auto flex-col bg-surface-raised px-4 py-4">
-        {}
         <div
           ref={scrollRef}
           className="persistent-scrollbar min-h-0 overflow-auto overscroll-contain rounded-md border border-border bg-background"
@@ -1232,6 +1225,13 @@ function CsvFilePreview({ file, onSelectionAddToChat }: CsvFilePreviewProps) {
 
 function FilePreviewImage({ url, alt }: FilePreviewImageProps) {
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const imageTabLightbox = useImageTabLightbox();
+
+  useLayoutEffect(() => {
+    if (imageTabLightbox?.isOpen) {
+      imageTabLightbox.update({ alt, src: url });
+    }
+  }, [alt, imageTabLightbox, url]);
 
   return (
     <div className="pt-4">
@@ -1239,16 +1239,24 @@ function FilePreviewImage({ url, alt }: FilePreviewImageProps) {
         type="button"
         className="block w-full cursor-zoom-in"
         aria-label={`Open ${alt} in full screen preview`}
-        onClick={() => setIsLightboxOpen(true)}
+        onClick={() => {
+          if (imageTabLightbox) {
+            imageTabLightbox.open({ alt, src: url });
+            return;
+          }
+          setIsLightboxOpen(true);
+        }}
       >
         <img src={url} alt={alt} className="mx-auto block h-auto max-w-full" />
       </button>
-      <ImageLightbox
-        title={alt}
-        imageSrc={isLightboxOpen ? url : null}
-        imageAlt={alt}
-        onClose={() => setIsLightboxOpen(false)}
-      />
+      {imageTabLightbox === null ? (
+        <ImageLightbox
+          title={alt}
+          imageSrc={isLightboxOpen ? url : null}
+          imageAlt={alt}
+          onClose={() => setIsLightboxOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

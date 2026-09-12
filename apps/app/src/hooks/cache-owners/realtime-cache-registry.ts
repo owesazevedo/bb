@@ -347,7 +347,7 @@ export const REALTIME_THREAD_CHANGE_REGISTRY = {
       dirtyThreadSearchQueriesForCompletedTurn,
       dirtyThreadTimelineQueries,
       dirtyThreadPullRequestQueryForCompletedTurn,
-      dirtyThreadPromptHistoryQueriesForTurnRequests,
+      dirtyThreadTurnRequestQueries,
     ],
   },
   "history-rewritten": {
@@ -506,7 +506,7 @@ const HOST_CONNECTION_DIRTY_HANDLERS = [
 
 export const REALTIME_HOST_CHANGE_REGISTRY = {
   "host-connected": {
-    dirty: HOST_CONNECTION_DIRTY_HANDLERS,
+    dirty: [...HOST_CONNECTION_DIRTY_HANDLERS, dirtyAllThreadStorageQueries],
   },
   "host-disconnected": {
     dirty: HOST_CONNECTION_DIRTY_HANDLERS,
@@ -525,6 +525,7 @@ export const REALTIME_SYSTEM_CHANGE_REGISTRY = {
   },
   "plugins-changed": {
     dirty: [
+      dirtySystemConfigQueries,
       dirtyPluginContributionQueries,
       dirtyProjectCommandCatalogQueries,
       dirtyPluginManagementQueries,
@@ -534,6 +535,9 @@ export const REALTIME_SYSTEM_CHANGE_REGISTRY = {
   },
   "provider-registrations-changed": {
     dirty: [dirtySystemProviderQueries, dirtySystemExecutionOptionQueries],
+  },
+  "environment-availability-changed": {
+    dirty: [dirtyEnvironmentProviderQueries],
   },
   "ui-preferences-changed": {
     dirty: [dirtyUiPreferencesQueries],
@@ -879,14 +883,18 @@ function dirtyThreadTimelineQueries({
   }
 }
 
-function dirtyThreadPromptHistoryQueriesForTurnRequests({
+function dirtyThreadTurnRequestQueries({
   eventTypes,
+  queryClient,
   threadId,
 }: ThreadRealtimeDirtyContext): QueryKey[] {
-  if (!eventTypes?.includes("client/turn/requested")) {
-    return [];
-  }
-  return getThreadPromptHistoryInvalidationQueryKeys({ threadId });
+  if (!threadId || !eventTypes?.includes("client/turn/requested")) return [];
+  const queryKey = threadDefaultExecutionOptionsQueryKey(threadId);
+  void queryClient.cancelQueries({ queryKey });
+  return [
+    queryKey,
+    ...getThreadPromptHistoryInvalidationQueryKeys({ threadId }),
+  ];
 }
 
 function dirtyThreadPullRequestQueryForCompletedTurn({
@@ -919,12 +927,7 @@ function dirtyThreadStorageQueriesForThread({
   threadId,
 }: ThreadRealtimeDirtyContext): QueryKey[] {
   if (!threadId) {
-    return [
-      allThreadStorageFilesQueryKeyPrefix(),
-      allThreadStorageLocationsQueryKeyPrefix(),
-      allThreadStoragePathsQueryKeyPrefix(),
-      allThreadStorageFilePreviewQueryKeyPrefix(),
-    ];
+    return dirtyAllThreadStorageQueries();
   }
   return [
     threadStorageFilesForThreadQueryKeyPrefix(threadId),
@@ -1113,6 +1116,15 @@ function dirtyThreadStorageQueriesForEnvironment({
     queryKeys.push(threadStorageFilePreviewQueryKeyPrefix(threadId));
   }
   return queryKeys;
+}
+
+function dirtyAllThreadStorageQueries(): QueryKey[] {
+  return [
+    allThreadStorageFilesQueryKeyPrefix(),
+    allThreadStorageLocationsQueryKeyPrefix(),
+    allThreadStoragePathsQueryKeyPrefix(),
+    allThreadStorageFilePreviewQueryKeyPrefix(),
+  ];
 }
 
 function dirtyHostAvailabilityQueries(): QueryKey[] {

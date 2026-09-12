@@ -6,8 +6,6 @@ import {
   REGISTRY_SKILL_DETAIL_ROUTE_PATH,
   REGISTRY_SKILLS_ROUTE_PATH,
   ROUTE_PATTERNS,
-  SETTINGS_PLUGIN_ROUTE_PATH,
-  SETTINGS_PLUGINS_ROUTE_PATH,
   SKILL_DETAIL_ROUTE_PATH,
   SKILLS_ROUTE_PATH,
   TOOLS_ROUTE_PATH,
@@ -44,7 +42,6 @@ export {
   LEGACY_TOOLS_AUTOMATION_BROWSE_ROUTE_PATH,
   LEGACY_TOOLS_AUTOMATION_DETAIL_ROUTE_PATH,
   LEGACY_TOOLS_AUTOMATION_EDIT_ROUTE_PATH,
-  LEGACY_SKILLS_ROUTE_PATH,
   LEGACY_AUTOMATIONS_ROUTE_PATH,
   LEGACY_AUTOMATION_DETAIL_ROUTE_PATH,
   AUTOMATIONS_PLUGIN_ID,
@@ -103,20 +100,6 @@ export function isToolsRoutePath(pathname: string): boolean {
     isSkillsRoutePath(pathname) ||
     pathname === TOOLS_ROUTE_PATH ||
     matchPath(`${TOOLS_ROUTE_PATH}/*`, pathname) !== null
-  );
-}
-
-export function isLegacyInstalledPluginsRoute({
-  pathname,
-  search,
-}: {
-  pathname: string;
-  search: string;
-}): boolean {
-  return (
-    matchPath(SETTINGS_PLUGINS_ROUTE_PATH, pathname) !== null ||
-    (matchPath(SETTINGS_PLUGIN_ROUTE_PATH, pathname) !== null &&
-      new URLSearchParams(search).get("view") === "installed")
   );
 }
 

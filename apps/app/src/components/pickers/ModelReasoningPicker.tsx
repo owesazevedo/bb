@@ -6,7 +6,6 @@ import {
   useRef,
   useState,
   type KeyboardEventHandler,
-  type PointerEventHandler,
   type ReactNode,
 } from "react";
 import type {
@@ -54,6 +53,7 @@ import {
   OPTION_TRIGGER_CONTENT_CLASS_NAME,
 } from "@bb/shared-ui/option-display";
 import { type PickerOption } from "./OptionPicker";
+import { PickerLoadingRows } from "./PickerLoadingRows";
 import type { ModelPickerOption } from "./model-picker-option";
 import { searchPickerOptions } from "./picker-search";
 import { useResetPickerScroll } from "./useResetPickerScroll";
@@ -187,7 +187,6 @@ interface ModelReasoningPickerProps {
   className?: string;
   fastModeLabel?: string;
   muted?: boolean;
-  defaultOpen?: boolean;
   modal?: boolean;
   align?: "start" | "center" | "end";
   disabled?: boolean;
@@ -229,14 +228,13 @@ export function ModelReasoningPicker({
   className,
   fastModeLabel,
   muted,
-  defaultOpen = false,
   modal = true,
   align = "start",
   disabled,
   footerAction,
 }: ModelReasoningPickerProps) {
   const isCompactViewport = useIsCompactViewport();
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const registeredToggleShortcut = useAppCommandShortcut("modelPicker.toggle");
   const toggleShortcut = commandShortcutsEnabled
@@ -328,19 +326,14 @@ export function ModelReasoningPicker({
     ...providerRouting,
     providerId: isPreviewing ? previewProviderId : undefined,
   });
-  const previewSelectionBlocked =
-    requireVerifiedProviderPreview &&
-    isPreviewing &&
-    (previewQuery.data === undefined ||
-      previewQuery.isPlaceholderData ||
-      previewQuery.isError ||
-      previewQuery.data.modelLoadError !== null);
   const previewCatalogIsVerified =
     isPreviewing &&
     previewQuery.data !== undefined &&
     !previewQuery.isPlaceholderData &&
     !previewQuery.isError &&
     previewQuery.data.modelLoadError === null;
+  const previewSelectionBlocked =
+    requireVerifiedProviderPreview && isPreviewing && !previewCatalogIsVerified;
 
   const previewProvider = useMemo(
     () =>
@@ -438,9 +431,7 @@ export function ModelReasoningPicker({
   const isShowingModelError =
     !activeModelIsLoading && !hasActiveModelOptions && activeModelLoadFailed;
   const showProviderTabs =
-    hasMultipleProviders &&
-    onSelectedProviderChange !== undefined &&
-    providerOptions.length > 1 &&
+    canSwitchProviders &&
     (!isShowingModelError || activeModelErrorIsProviderSpecific);
 
   const activeBrandPrefix = activeProvider?.brandPrefix;
@@ -907,20 +898,19 @@ export function ModelReasoningPicker({
         onMobileContentAnimationEnd={handleMobileContentAnimationEnd}
         autoFocusRef={showSearchInput ? searchInputRef : undefined}
         className={cn(
-          "flex flex-col p-0",
+          "flex min-h-0 flex-col p-0",
           MODEL_PICKER_MENU_WIDTH_CLASS_NAME,
-          !isCompactViewport &&
-            "max-h-[min(var(--radix-popover-content-available-height),calc(100dvh-0.5rem))] overflow-hidden",
+          isCompactViewport
+            ? "overflow-y-hidden"
+            : "max-h-[min(var(--radix-popover-content-available-height),calc(100dvh-0.5rem))] overflow-hidden",
         )}
       >
         <ResetBrowseStateOnContentUnmount onReset={resetBrowseState} />
         {showProviderTabs ? (
           <div
             className={cn(
-              "flex items-center gap-0.5 border-b border-border px-2.5 pt-1",
-              isCompactViewport
-                ? "sticky top-0 z-10 bg-background"
-                : "shrink-0 bg-surface-recessed",
+              "flex shrink-0 items-center gap-0.5 border-b border-border px-2.5 pt-1",
+              isCompactViewport ? "bg-background" : "bg-surface-recessed",
             )}
           >
             {providerOptions.map((provider) => {
@@ -978,12 +968,7 @@ export function ModelReasoningPicker({
         ) : null}
 
         <MenuHoverProvider>
-          <div
-            className={cn(
-              !isCompactViewport &&
-                "min-h-0 flex flex-1 flex-col overflow-hidden",
-            )}
-          >
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <div
               ref={listRef}
               key={activeProviderId || "no-provider"}
@@ -991,17 +976,18 @@ export function ModelReasoningPicker({
               id={showSearchInput ? listboxId : undefined}
               aria-label={showSearchInput ? "Models" : undefined}
               className={cn(
-                "px-1 pb-1 pt-0",
-                isCompactViewport
-                  ? "overflow-y-auto"
-                  : "min-h-0 max-h-64 flex-1 overflow-y-auto overscroll-contain",
+                "min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 pb-1 pt-0",
+                !isCompactViewport && "max-h-64",
               )}
             >
               {isShowingModelError ? null : (
                 <MenuSectionLabel>Model</MenuSectionLabel>
               )}
               {activeModelIsLoading ? (
-                <ModelPickerLoadingRows />
+                <PickerLoadingRows
+                  label="Loading models"
+                  rowDataAttribute="data-model-loading-row"
+                />
               ) : hasActiveModelOptions ? (
                 <>
                   {navRows.map((row, index) => {
@@ -1114,7 +1100,7 @@ export function ModelReasoningPicker({
                         value={option.value}
                         aria-label={option.label}
                         className={cn(
-                          "h-6 min-w-0 flex-auto shrink-0 whitespace-nowrap rounded-sm px-1 text-xs font-normal shadow-none data-[state=on]:bg-state-active data-[state=on]:text-foreground",
+                          "h-6 min-w-0 flex-auto shrink-0 whitespace-nowrap rounded-sm px-1 text-xs font-normal shadow-none hover:bg-state-hover hover:text-foreground data-[state=on]:bg-state-active data-[state=on]:text-foreground data-[state=on]:hover:bg-state-active",
                           isCompactViewport && "h-9 text-sm",
                           LIST_HOVER_TRANSITION,
                         )}
@@ -1193,52 +1179,18 @@ function MenuSectionLabel({
   );
 }
 
-const MODEL_LOADING_ROW_WIDTHS = ["w-20", "w-28", "w-24", "w-32"] as const;
-
-function ModelPickerLoadingRows() {
-  const isCompactViewport = useIsCompactViewport();
-
-  return (
-    <div role="status" aria-label="Loading models" className="pb-1">
-      <span className="sr-only">Loading models</span>
-      {MODEL_LOADING_ROW_WIDTHS.map((widthClassName) => (
-        <div
-          key={widthClassName}
-          data-model-loading-row=""
-          aria-hidden
-          className={cn(
-            "flex items-center rounded-sm px-2",
-            isCompactViewport ? "py-2" : "py-[0.3125rem]",
-          )}
-        >
-          <Skeleton
-            className={cn("h-3 max-w-[75%] rounded-sm", widthClassName)}
-          />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function MoreModelsToggleRow({
   expanded,
   onToggle,
   isActive,
   id,
-  onPointerEnter: callerPointerEnter,
-  onKeyDown: callerKeyDown,
 }: {
   expanded: boolean;
   onToggle: () => void;
   isActive?: boolean;
   id?: string;
-  onPointerEnter?: PointerEventHandler<HTMLButtonElement>;
-  onKeyDown?: KeyboardEventHandler<HTMLButtonElement>;
 }) {
-  const { hoverProps } = useMenuItemHover({
-    onPointerEnter: callerPointerEnter,
-    onKeyDown: callerKeyDown,
-  });
+  const { hoverProps } = useMenuItemHover();
   const isCompactViewport = useIsCompactViewport();
   return (
     <button
@@ -1393,8 +1345,6 @@ function MenuRowButton({
   isActive,
   id,
   role,
-  onPointerEnter: callerPointerEnter,
-  onKeyDown: callerKeyDown,
 }: {
   label: string;
   qualifier?: string;
@@ -1404,13 +1354,8 @@ function MenuRowButton({
   isActive?: boolean;
   id?: string;
   role?: React.AriaRole;
-  onPointerEnter?: PointerEventHandler<HTMLButtonElement>;
-  onKeyDown?: KeyboardEventHandler<HTMLButtonElement>;
 }) {
-  const { hoverProps } = useMenuItemHover({
-    onPointerEnter: callerPointerEnter,
-    onKeyDown: callerKeyDown,
-  });
+  const { hoverProps } = useMenuItemHover();
   const isCompactViewport = useIsCompactViewport();
   const { base, tag } = splitModelLabelTag(label);
   return (

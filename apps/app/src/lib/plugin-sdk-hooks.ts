@@ -41,6 +41,7 @@ import { sdk } from "@/lib/sdk";
 import { useSystemProviders } from "@/hooks/queries/system-queries";
 import { requestComposerFocus } from "@/lib/composer-focus-requests";
 import { setComposerTextEffect } from "@/lib/composer-text-effects";
+import { createKeyedListeners } from "@/lib/keyed-listeners";
 import {
   usePromptDraftStorage,
   type PromptDraftScope,
@@ -522,16 +523,7 @@ const inputLocksByStorageKey = new Map<
   string,
   Map<ComposerInputLockOwner, string>
 >();
-const inputLockListenersByStorageKey = new Map<
-  string,
-  Set<ComposerInputLockListener>
->();
-
-function notifyComposerInputLock(storageKey: string): void {
-  const listeners = inputLockListenersByStorageKey.get(storageKey);
-  if (!listeners) return;
-  for (const listener of [...listeners]) listener();
-}
+const inputLockListeners = createKeyedListeners<string>();
 
 export function getComposerInputLock(storageKey: string | null): boolean {
   if (storageKey === null) return false;
@@ -558,7 +550,7 @@ function setComposerInputLock(
     if (owners?.size === 0) inputLocksByStorageKey.delete(storageKey);
   }
   if (getComposerInputLock(storageKey) !== wasLocked) {
-    notifyComposerInputLock(storageKey);
+    inputLockListeners.notify(storageKey);
   }
 }
 
@@ -567,16 +559,7 @@ function subscribeComposerInputLock(
   listener: ComposerInputLockListener,
 ): () => void {
   if (storageKey === null) return () => {};
-  let listeners = inputLockListenersByStorageKey.get(storageKey);
-  if (!listeners) {
-    listeners = new Set();
-    inputLockListenersByStorageKey.set(storageKey, listeners);
-  }
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-    if (listeners.size === 0) inputLockListenersByStorageKey.delete(storageKey);
-  };
+  return inputLockListeners.subscribe(storageKey, listener);
 }
 
 export function useComposerInputLock(storageKey: string | null): boolean {

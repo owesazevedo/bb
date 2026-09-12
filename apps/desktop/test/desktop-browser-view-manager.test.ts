@@ -894,6 +894,7 @@ interface AttachBrowserTabArgs {
   hostWindow: FakeHostWindow;
   manager: DesktopBrowserViewManager;
   tabId: string;
+  threadId?: string;
   url: string;
 }
 
@@ -901,7 +902,7 @@ function attachBrowserTab(args: AttachBrowserTabArgs): void {
   args.manager.attach({
     hostWindow: args.hostWindow,
     request: {
-      threadId: "thread-1",
+      threadId: args.threadId ?? "thread-1",
       tabId: args.tabId,
       url: args.url,
       bounds: { x: 100, y: 50, width: 500, height: 350 },
@@ -921,7 +922,10 @@ function requireFakeView(
   return view;
 }
 
-function createRendererRecoveryFixture(webContentsId: number) {
+function createRendererRecoveryFixture(
+  webContentsId: number,
+  threadId = "thread-1",
+) {
   const manager = createDesktopBrowserViewManager({
     partition: "persist:test",
   });
@@ -932,6 +936,7 @@ function createRendererRecoveryFixture(webContentsId: number) {
   attachBrowserTab({
     manager,
     hostWindow,
+    threadId,
     tabId: "browser:a",
     url: "https://example.com/original",
   });
@@ -1438,7 +1443,12 @@ describe("DesktopBrowserViewManager", () => {
   it.each(["local", "enrolled"])(
     "preserves same-server reconnect tabs but clears them before a different server registration (%s daemon)",
     async (daemon) => {
-      const { manager, hostWindow } = createRendererRecoveryFixture(91);
+      const threadId = "thr_23456789ab";
+      const newServerThreadId = "thr_3456789abc";
+      const { manager, hostWindow } = createRendererRecoveryFixture(
+        91,
+        threadId,
+      );
       const broker = createDesktopBrowserBroker({
         manager,
         product: "Chrome/test",
@@ -1526,7 +1536,7 @@ describe("DesktopBrowserViewManager", () => {
         client.reconnect();
         await vi.waitFor(() => expect(hasOriginalTab(2)).toBe(true));
         expect(
-          manager.listTabs({ hostWebContentsId: 91, threadId: "thread-1" }),
+          manager.listTabs({ hostWebContentsId: 91, threadId }),
         ).toHaveLength(1);
         const target = broker.getTarget(91);
         if (!target) throw new Error("Expected connected desktop");
@@ -1534,7 +1544,7 @@ describe("DesktopBrowserViewManager", () => {
           type: "desktop.browser.acquire_control",
           instanceId: target.instanceId,
           generation: target.generation,
-          threadId: "thread-1",
+          threadId,
           leaseId: "origin-lease",
           tabIds: ["browser:a"],
           controllerLabel: "Test",
@@ -1561,7 +1571,7 @@ describe("DesktopBrowserViewManager", () => {
           hostWindow,
           request: {
             tabId: "new-server-tab",
-            threadId: "thread-new",
+            threadId: newServerThreadId,
             url: "about:blank",
             bounds: { x: 0, y: 0, width: 640, height: 400 },
             visible: false,
@@ -1573,7 +1583,7 @@ describe("DesktopBrowserViewManager", () => {
               ({ peer, frame }) =>
                 peer === 3 &&
                 frame.type === "desktop-browser.changed" &&
-                frame.threadId === "thread-new",
+                frame.threadId === newServerThreadId,
             ),
           ).toBe(true),
         );
@@ -1582,7 +1592,8 @@ describe("DesktopBrowserViewManager", () => {
             .filter(({ peer }) => peer === 3)
             .every(
               ({ frame }) =>
-                frame.type === "register" || frame.threadId === "thread-new",
+                frame.type === "register" ||
+                frame.threadId === newServerThreadId,
             ),
         ).toBe(true);
         expect(hasOriginalTab(3)).toBe(false);

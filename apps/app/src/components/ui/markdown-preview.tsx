@@ -37,7 +37,7 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import { ImageLightbox } from "./image-lightbox.js";
+import { ImageLightbox, getWrappedImageIndex } from "./image-lightbox.js";
 import { stripBrowserGrabHiddenPayload } from "@/lib/browser-grab-quote";
 import { stripMarkdownGrabHiddenPayload } from "@/lib/markdown-grab-quote";
 import {
@@ -95,6 +95,7 @@ import {
 import {
   buildMessageDirectiveComponent,
   remarkMessageDirectives,
+  type BuildMessageDirectiveComponentArgs,
   type MarkdownMessageDirectives,
   type MountedMessageDirective,
 } from "./markdown-message-directives.js";
@@ -154,18 +155,11 @@ interface BuildMarkdownComponentsArgs {
   linkRouting?: MarkdownLinkRouting;
   preferredTheme: Theme;
   rewriteLocalhostLinks: boolean;
-  setExpandedImageUrl: ExpandedImageUrlSetter;
+  setExpandedImage: ExpandedMarkdownImageSetter;
   threadMentions?: MarkdownThreadMentions;
   promptMentions?: ResolvedPromptMentions;
-  messageDirectives?: ResolvedMessageDirectiveRender;
+  messageDirectives?: BuildMessageDirectiveComponentArgs;
   variant: MarkdownPreviewVariant;
-}
-
-interface ResolvedMessageDirectiveRender {
-  mounts: readonly MountedMessageDirective[];
-  message: MarkdownMessageDirectives["message"];
-  openWorkspaceFile: MarkdownMessageDirectives["openWorkspaceFile"];
-  openThreadPanel: MarkdownMessageDirectives["openThreadPanel"];
 }
 
 interface ResolvedPromptMentions {
@@ -180,15 +174,16 @@ interface BuildLocalAwareUrlTransformArgs {
   localImageRouting: MarkdownLocalImageRouting | undefined;
 }
 
-interface ResolvedMarkdownLocalPath {
-  image: MarkdownPreviewLocalFileLink;
+interface ResolvedMarkdownLocalFileTarget {
+  href: string;
+  link: MarkdownPreviewLocalFileLink;
   sourceKind: "absolute" | "relative";
 }
 
 interface MarkdownImageRendererArgs {
   alt: ComponentPropsWithoutRef<"img">["alt"];
   imageAttributes: MarkdownImageRenderAttributes;
-  setExpandedImageUrl: ExpandedImageUrlSetter;
+  setExpandedImage: ExpandedMarkdownImageSetter;
   src: ComponentPropsWithoutRef<"img">["src"];
 }
 
@@ -237,7 +232,15 @@ interface AreMarkdownMessageDirectivesEqualArgs {
   previous: MarkdownMessageDirectives | undefined;
 }
 
-type ExpandedImageUrlSetter = Dispatch<SetStateAction<string | null>>;
+interface ExpandedMarkdownImage {
+  imageSources: readonly string[];
+  index: number;
+  url: string;
+}
+
+type ExpandedMarkdownImageSetter = Dispatch<
+  SetStateAction<ExpandedMarkdownImage | null>
+>;
 
 interface SetMarkdownContentWidthVariableArgs {
   element: HTMLElement;
@@ -497,40 +500,42 @@ function isMarkdownAppRouteHref({ href }: IsMarkdownAppRouteHrefArgs): boolean {
   );
 }
 
-function resolveMarkdownLocalPath(
+function resolveMarkdownLocalFileTarget(
   value: string,
-  absolutePaths: MarkdownAbsoluteLocalFileLinkRouting,
-  relativePaths: MarkdownRelativeLocalFileLinkRouting | undefined,
-): ResolvedMarkdownLocalPath | null {
-  const absolutePath = parseLocalFileHref({
-    absoluteLinks: absolutePaths,
+  absolute: MarkdownAbsoluteLocalFileLinkRouting,
+  relative: MarkdownRelativeLocalFileLinkRouting | undefined,
+): ResolvedMarkdownLocalFileTarget | null {
+  const absoluteLink = parseLocalFileHref({
+    absoluteLinks: absolute,
     href: value,
   });
-  if (absolutePath !== null) {
+  if (absoluteLink !== null) {
     return {
-      image: absolutePath,
+      href: value,
+      link: absoluteLink,
       sourceKind: "absolute",
     };
   }
-  if (relativePaths === undefined) {
+  if (relative === undefined) {
     return null;
   }
 
   const resolvedHref = resolveRelativeLocalFileHref({
     href: value,
-    ...relativePaths,
+    ...relative,
   });
   if (resolvedHref === null) {
     return null;
   }
-  const relativePath = parseLocalFileHref({
-    absoluteLinks: absolutePaths,
+  const relativeLink = parseLocalFileHref({
+    absoluteLinks: absolute,
     href: resolvedHref,
   });
-  return relativePath === null
+  return relativeLink === null
     ? null
     : {
-        image: relativePath,
+        href: resolvedHref,
+        link: relativeLink,
         sourceKind: "relative",
       };
 }
@@ -542,41 +547,25 @@ function buildLocalAwareUrlTransform({
 }: BuildLocalAwareUrlTransformArgs): UrlTransform {
   return (value, key, node) => {
     if (key === "href" && localFileRouting !== undefined) {
-      if (
-        parseLocalFileHref({
-          absoluteLinks: localFileRouting.absoluteLinks,
-          href: value,
-        })
-      ) {
-        return value;
-      }
-
-      if (localFileRouting.relativeLinks !== undefined) {
-        const resolvedHref = resolveRelativeLocalFileHref({
-          href: value,
-          ...localFileRouting.relativeLinks,
-        });
-        if (
-          resolvedHref !== null &&
-          parseLocalFileHref({
-            absoluteLinks: localFileRouting.absoluteLinks,
-            href: resolvedHref,
-          })
-        ) {
-          return resolvedHref;
-        }
+      const localFile = resolveMarkdownLocalFileTarget(
+        value,
+        localFileRouting.absoluteLinks,
+        localFileRouting.relativeLinks,
+      );
+      if (localFile !== null) {
+        return localFile.href;
       }
     }
 
     if (key === "src" && localImageRouting !== undefined) {
-      const localImage = resolveMarkdownLocalPath(
+      const localImage = resolveMarkdownLocalFileTarget(
         value,
         localImageRouting.absolutePaths,
         localImageRouting.relativePaths,
       );
       if (localImage !== null) {
         return localImageRouting.resolveSrc(
-          localImage.image,
+          localImage.link,
           localImage.sourceKind,
         );
       }
@@ -607,32 +596,13 @@ function resolveInlineCodeMarkdownFileHref({
     return null;
   }
 
-  const absoluteLink = parseLocalFileHref({
-    absoluteLinks: localFileRouting.absoluteLinks,
-    href: codeText,
-  });
-  if (absoluteLink !== null) {
-    return hasMarkdownFileExtension(absoluteLink.path) ? codeText : null;
-  }
-
-  if (localFileRouting.relativeLinks === undefined) {
-    return null;
-  }
-
-  const resolvedHref = resolveRelativeLocalFileHref({
-    href: codeText,
-    ...localFileRouting.relativeLinks,
-  });
-  if (resolvedHref === null) {
-    return null;
-  }
-
-  const resolvedLink = parseLocalFileHref({
-    absoluteLinks: localFileRouting.absoluteLinks,
-    href: resolvedHref,
-  });
-  return resolvedLink !== null && hasMarkdownFileExtension(resolvedLink.path)
-    ? resolvedHref
+  const target = resolveMarkdownLocalFileTarget(
+    codeText,
+    localFileRouting.absoluteLinks,
+    localFileRouting.relativeLinks,
+  );
+  return target !== null && hasMarkdownFileExtension(target.link.path)
+    ? target.href
     : null;
 }
 
@@ -1061,7 +1031,7 @@ function MarkdownTableCell({ children }: MarkdownTableCellProps) {
 function renderMarkdownImage({
   alt,
   imageAttributes,
-  setExpandedImageUrl,
+  setExpandedImage,
   src,
 }: MarkdownImageRendererArgs) {
   const imageUrl = typeof src === "string" ? src : "";
@@ -1071,9 +1041,25 @@ function renderMarkdownImage({
       {...imageAttributes}
       src={imageUrl}
       alt={typeof alt === "string" ? alt : "Image"}
-      className="my-2 max-h-96 max-w-full cursor-zoom-in object-contain"
+      className="my-2 max-h-[max(384px,50vh)] max-w-full cursor-zoom-in object-contain"
       loading="lazy"
-      onClick={() => setExpandedImageUrl(imageUrl)}
+      onClick={(event) => {
+        const markdownElement = event.currentTarget.closest(
+          "[data-markdown-preview]",
+        );
+        const images = Array.from(
+          markdownElement?.querySelectorAll("img") ?? [],
+        );
+        const imageIndex = images.indexOf(event.currentTarget);
+        const imageSources = images.map(
+          (image) => image.getAttribute("src") ?? image.src,
+        );
+        setExpandedImage({
+          imageSources,
+          index: imageIndex,
+          url: event.currentTarget.getAttribute("src") ?? imageUrl,
+        });
+      }}
     />
   );
 }
@@ -1108,7 +1094,7 @@ function buildMarkdownComponents({
   linkRouting,
   preferredTheme,
   rewriteLocalhostLinks,
-  setExpandedImageUrl,
+  setExpandedImage,
   threadMentions,
   promptMentions,
   messageDirectives,
@@ -1347,7 +1333,7 @@ function buildMarkdownComponents({
     return renderMarkdownImage({
       alt,
       imageAttributes,
-      setExpandedImageUrl,
+      setExpandedImage,
       src,
     });
   }
@@ -1411,12 +1397,8 @@ function buildMarkdownComponents({
   }
 
   if (messageDirectives !== undefined) {
-    components["bb-message-directive"] = buildMessageDirectiveComponent({
-      mounts: messageDirectives.mounts,
-      message: messageDirectives.message,
-      openWorkspaceFile: messageDirectives.openWorkspaceFile,
-      openThreadPanel: messageDirectives.openThreadPanel,
-    });
+    components["bb-message-directive"] =
+      buildMessageDirectiveComponent(messageDirectives);
   }
 
   return components;
@@ -1704,7 +1686,8 @@ function MarkdownPreviewComponent({
 }: MarkdownPreviewProps) {
   const preferredTheme = usePreferredTheme();
   const [rewriteLocalhostLinks] = useRewriteLocalhostLinksPreference();
-  const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
+  const [expandedImage, setExpandedImage] =
+    useState<ExpandedMarkdownImage | null>(null);
   const localFileRouting = linkRouting?.localFile;
   const localImageRouting = linkRouting?.localImage;
   const normalizeLocalFileLinks =
@@ -1773,18 +1756,10 @@ function MarkdownPreviewComponent({
         linkRouting,
         preferredTheme,
         rewriteLocalhostLinks,
-        setExpandedImageUrl,
+        setExpandedImage,
         threadMentions,
         promptMentions: resolvedPromptMentions,
-        messageDirectives:
-          messageDirectiveMounts === null
-            ? undefined
-            : {
-                mounts: messageDirectiveMounts.mounts,
-                message: messageDirectiveMounts.message,
-                openWorkspaceFile: messageDirectiveMounts.openWorkspaceFile,
-                openThreadPanel: messageDirectiveMounts.openThreadPanel,
-              },
+        messageDirectives: messageDirectiveMounts ?? undefined,
         variant,
       }),
     [
@@ -1861,6 +1836,25 @@ function MarkdownPreviewComponent({
     </ReactMarkdown>
   );
 
+  const imageSources = expandedImage?.imageSources ?? [];
+  const expandedImageIndex = expandedImage?.index ?? -1;
+  const hasImageNavigation =
+    expandedImageIndex !== -1 && imageSources.length > 1;
+  const stepExpandedImage = (direction: "previous" | "next") => {
+    if (expandedImageIndex === -1) return;
+    const nextIndex = getWrappedImageIndex({
+      currentIndex: expandedImageIndex,
+      direction,
+      itemCount: imageSources.length,
+    });
+    const nextImageSource = imageSources[nextIndex];
+    setExpandedImage(
+      nextImageSource === undefined
+        ? null
+        : { imageSources, index: nextIndex, url: nextImageSource },
+    );
+  };
+
   return (
     <>
       <div
@@ -1884,10 +1878,13 @@ function MarkdownPreviewComponent({
       </div>
 
       <ImageLightbox
-        imageSrc={expandedImageUrl}
+        imageSrc={expandedImage?.url ?? null}
         imageAlt="Expanded image"
         title="Expanded image preview"
-        onClose={() => setExpandedImageUrl(null)}
+        hasMultipleImages={hasImageNavigation}
+        onPrevious={() => stepExpandedImage("previous")}
+        onNext={() => stepExpandedImage("next")}
+        onClose={() => setExpandedImage(null)}
       />
     </>
   );

@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 
+import { createStore, Provider } from "jotai";
+import { splitLayoutAtom, maximizedPaneIdAtom } from "@/lib/split-layout/atoms";
 import type { ReactNode } from "react";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -27,7 +30,8 @@ import {
   resetPluginSlotStoreForTest,
   setPluginSlotRegistrations,
 } from "@/lib/plugin-slots";
-import { PluginsView } from "./ToolsView";
+import { PluginsOverview } from "@/components/plugin/PluginsOverview";
+import { PluginDetailPaneView, PluginsView } from "./ToolsView";
 import { AppRoutes } from "../App";
 import {
   CatalogPluginDetail,
@@ -41,6 +45,7 @@ import type { PluginCatalogSearchEntry } from "@/hooks/queries/plugin-catalog-qu
 import { pluginSourceQueryKey } from "@/hooks/queries/query-keys";
 import type { PluginFrontendDiagnostic } from "@/lib/plugin-frontend";
 import {
+  makeInstalledPlugin,
   makePluginListItem,
   makePluginRegistrationSet,
 } from "@/test/fixtures/plugins";
@@ -102,14 +107,23 @@ const GITHUB_CATALOG_ENTRY = {
 
 function RoutedPluginsView() {
   const location = useLocation();
-  const prefix = "/plugins/";
+  const isSettings = location.pathname.startsWith("/settings/plugins");
+  const prefix = isSettings ? "/settings/plugins/" : "/plugins/";
   const pluginId = location.pathname.startsWith(prefix)
     ? decodeURIComponent(location.pathname.slice(prefix.length))
     : undefined;
   return (
     <>
       <TooltipProvider>
-        <PluginsView pluginId={pluginId} />
+        {isSettings ? (
+          pluginId ? (
+            <PluginDetailPaneView pluginId={pluginId} />
+          ) : (
+            <PluginsOverview mode="installed" />
+          )
+        ) : (
+          <PluginsView pluginId={pluginId} />
+        )}
       </TooltipProvider>
       <LocationProbe />
     </>
@@ -742,106 +756,113 @@ describe("BB Official plugin detail routing", () => {
     });
   });
 
-  it.each(["/plugins/github?view=installed", "/plugins?view=installed"])(
-    "opens installed plugin settings from %s",
-    async (path) => {
-      const author = {
-        name: "BB",
-        github: "get-bb",
-        url: "https://github.com/get-bb",
-      };
-      const catalogEntries = [
-        { ...GITHUB_CATALOG_ENTRY, author, installed: true },
-        {
-          ...GITHUB_CATALOG_ENTRY,
-          entryId: "automations",
-          pluginId: "automations",
-          displayName: "Automations",
-          author,
-        },
-      ];
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async (input: RequestInfo | URL) => {
-          const url = String(input);
-          if (url === "/api/v1/plugins") {
-            return new Response(
-              JSON.stringify({
-                enabled: true,
-                plugins: [
-                  {
-                    ...GITHUB_PLUGIN,
-                    iconUrl: null,
-                    screenshots: [],
-                    collections: [],
-                    providerIds: [],
-                    icons: {},
-                    updateState: {},
-                  },
-                ],
-              }),
-              { headers: { "content-type": "application/json" } },
-            );
-          }
-          if (url.startsWith("/api/v1/plugin-catalog/search")) {
-            return new Response(
-              JSON.stringify({ results: catalogEntries, collections: [] }),
-              { headers: { "content-type": "application/json" } },
-            );
-          }
-          return new Response(JSON.stringify({ error: "not found" }), {
-            status: 404,
-            headers: { "content-type": "application/json" },
-          });
-        }),
-      );
-
-      const { wrapper: QueryClientWrapper } = createQueryClientTestHarness();
-      render(
-        <MemoryRouter initialEntries={[path]}>
-          <Routes>
-            <Route path="/plugins/*" element={<RoutedPluginsView />} />
-          </Routes>
-        </MemoryRouter>,
-        { wrapper: QueryClientWrapper },
-      );
-
-      if (path === "/plugins?view=installed") {
-        expect(
-          await screen.findByRole("textbox", {
-            name: "Search installed plugins",
-          }),
-        ).toBeTruthy();
-        expect(screen.getByTestId("route-path").textContent).toBe("/plugins");
-        const pluginButton = await screen.findByRole("button", {
-          name: "GitHub plugin details",
+  it.each([
+    "/settings/plugins/github?view=installed",
+    "/settings/plugins",
+    "/plugins/github?view=installed",
+    "/plugins?view=installed",
+  ])("opens installed plugin settings from %s", async (path) => {
+    const author = {
+      name: "BB",
+      github: "get-bb",
+      url: "https://github.com/get-bb",
+    };
+    const catalogEntries = [
+      { ...GITHUB_CATALOG_ENTRY, author, installed: true },
+      {
+        ...GITHUB_CATALOG_ENTRY,
+        entryId: "automations",
+        pluginId: "automations",
+        displayName: "Automations",
+        author,
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/v1/plugins") {
+          return new Response(
+            JSON.stringify({
+              enabled: true,
+              plugins: [
+                {
+                  ...GITHUB_PLUGIN,
+                  iconUrl: null,
+                  screenshots: [],
+                  collections: [],
+                  providerIds: [],
+                  icons: {},
+                  updateState: {},
+                },
+              ],
+            }),
+            { headers: { "content-type": "application/json" } },
+          );
+        }
+        if (url.startsWith("/api/v1/plugin-catalog/search")) {
+          return new Response(
+            JSON.stringify({ results: catalogEntries, collections: [] }),
+            { headers: { "content-type": "application/json" } },
+          );
+        }
+        return new Response(JSON.stringify({ error: "not found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
         });
-        expect(
-          vi.mocked(fetch).mock.calls.some(([input]) =>
+      }),
+    );
+
+    const { wrapper: QueryClientWrapper } = createQueryClientTestHarness();
+    render(
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/plugins/*" element={<RoutedPluginsView />} />
+          <Route path="/settings/plugins/*" element={<RoutedPluginsView />} />
+        </Routes>
+      </MemoryRouter>,
+      { wrapper: QueryClientWrapper },
+    );
+
+    if (path === "/settings/plugins" || path === "/plugins?view=installed") {
+      expect(
+        await screen.findByRole("textbox", {
+          name: "Search installed plugins",
+        }),
+      ).toBeTruthy();
+      expect(screen.getByTestId("route-path").textContent).toBe(
+        path.split("?")[0],
+      );
+      const pluginButton = await screen.findByRole("button", {
+        name: "GitHub plugin details",
+      });
+      expect(
+        vi
+          .mocked(fetch)
+          .mock.calls.some(([input]) =>
             String(input).startsWith("/api/v1/plugin-catalog/search"),
           ),
-        ).toBe(false);
-        fireEvent.click(pluginButton);
-      }
+      ).toBe(false);
+      fireEvent.click(pluginButton);
+    }
 
-      const relatedPluginButton = await screen.findByRole("button", {
-        name: "Open Automations details",
-      });
-      expect(screen.getAllByText("GitHub", { selector: "h1" })).toHaveLength(1);
-      fireEvent.click(relatedPluginButton);
-      await waitFor(() => {
-        expect(screen.getByTestId("route-path").textContent).toBe(
-          "/plugins/automations",
-        );
-      });
-      expect(screen.getByTestId("route-search").textContent).toBe(
-        "?view=installed",
+    const relatedPluginButton = await screen.findByRole("button", {
+      name: "Open Automations details",
+    });
+    expect(screen.getAllByText("GitHub", { selector: "h1" })).toHaveLength(1);
+    fireEvent.click(relatedPluginButton);
+    await waitFor(() => {
+      expect(screen.getByTestId("route-path").textContent).toBe(
+        "/plugins/automations",
       );
-      expect(
-        screen.queryByRole("button", { name: "Close Automations" }),
-      ).toBeNull();
-    },
-  );
+    });
+    expect(screen.getByTestId("route-search").textContent).toBe(
+      "?view=installed",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Close Automations" }),
+    ).toBeNull();
+  });
 
   it("opens an author from a card and returns to the prior Browse filters", async () => {
     const author = {
@@ -1750,4 +1771,101 @@ describe("PluginDetail capability inventory", () => {
       expect(screen.getByText(label)).toBeTruthy();
     }
   });
+});
+
+describe("detail disable workspace cleanup", () => {
+  it.each([false, true])(
+    "preserves the workspace until disable settles (failure=%s)",
+    async (fails) => {
+      const store = createStore();
+      const layout = {
+        root: {
+          type: "pane" as const,
+          paneId: "github",
+          content: {
+            kind: "plugin-panel" as const,
+            pluginId: "github",
+            panelPath: "main",
+            subPath: "",
+          },
+        },
+        focusedPaneId: "github",
+      };
+      store.set(splitLayoutAtom, layout);
+      store.set(maximizedPaneIdAtom, "github");
+      let complete: ((response: Response) => void) | undefined;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url.includes("/github/disable"))
+            return new Promise<Response>((resolve) => {
+              complete = resolve;
+            });
+          if (url === "/api/v1/plugins")
+            return Response.json({
+              plugins: [makeInstalledPlugin({ id: "github", name: "GitHub" })],
+            });
+          if (url.includes("plugin-catalog/search"))
+            return Response.json({ results: [], collections: [] });
+          return Response.json({ error: "not found" }, { status: 404 });
+        }),
+      );
+      const { wrapper: QueryClientWrapper } = createQueryClientTestHarness();
+      render(
+        <QueryClientWrapper>
+          <Provider store={store}>
+            <MemoryRouter initialEntries={["/skills", "/plugins/github/main"]}>
+              <TooltipProvider>
+                <PluginDetailPaneView pluginId="github" />
+              </TooltipProvider>
+              <LocationProbe />
+              <HistoryBackButton />
+            </MemoryRouter>
+          </Provider>
+        </QueryClientWrapper>,
+      );
+      fireEvent.click(
+        await screen.findByRole("switch", { name: "Disable GitHub" }),
+      );
+      await waitFor(() =>
+        expect(
+          screen
+            .getByRole("switch", { name: "Disable GitHub" })
+            .hasAttribute("disabled"),
+        ).toBe(true),
+      );
+      await waitFor(() => expect(complete).toBeDefined());
+      expect(store.get(splitLayoutAtom)).toEqual(layout);
+      await act(async () =>
+        complete?.(
+          fails
+            ? Response.json({ error: "denied" }, { status: 500 })
+            : Response.json({
+                ok: true,
+                plugin: makeInstalledPlugin({
+                  id: "github",
+                  enabled: false,
+                  status: "disabled",
+                }),
+              }),
+        ),
+      );
+      if (fails) {
+        expect(store.get(splitLayoutAtom)).toEqual(layout);
+        expect(store.get(maximizedPaneIdAtom)).toBe("github");
+        expect(screen.getByTestId("route-path").textContent).toBe(
+          "/plugins/github/main",
+        );
+      } else {
+        expect(store.get(splitLayoutAtom)?.root).toMatchObject({
+          content: { kind: "new-thread" },
+        });
+        expect(store.get(maximizedPaneIdAtom)).toBeNull();
+        expect(screen.getByTestId("route-path").textContent).toBe("/");
+        fireEvent.click(screen.getByRole("button", { name: "Browser back" }));
+        expect(screen.getByTestId("route-path").textContent).toBe("/skills");
+      }
+    },
+  );
 });
